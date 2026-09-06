@@ -18,8 +18,9 @@ Supabase Postgres에 직접 붙는 API 서버. 인증은 Supabase Auth가 발급
    (이 프로젝트는 `.env` 파일을 자동으로 읽지 않는다.)
    - `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`
    - `SUPABASE_JWT_ISSUER_URI`
-2. **Direct connection(`db.<ref>.supabase.co`)은 IPv6 전용이다.** IPv6이 안 되는 네트워크면
-   Supabase 대시보드 Database 설정의 Session Pooler 주소로 바꿔야 한다.
+2. **Direct connection(`db.<ref>.supabase.co`)은 IPv6 전용이다.** `.env.example`은 이미
+   Session Pooler(IPv4) 주소로 채워져 있음 — 대부분의 사내망/AWS 기본 VPC가 여기 해당하니
+   Direct connection으로 바꾸지 말 것.
 
 ## 실행
 
@@ -29,9 +30,15 @@ Supabase Postgres에 직접 붙는 API 서버. 인증은 Supabase Auth가 발급
 
 ## 확인된 것 / 안 된 것
 
-- `./gradlew compileJava` 성공 (컴파일 검증 완료)
+- `./gradlew build` 성공 (컴파일 + 패키징 검증 완료)
 - Supabase JWKS(`/auth/v1/.well-known/jwks.json`) 응답 확인 → `SecurityConfig`의 issuer-uri 설정이
   실제로 맞는 값임을 확인함
+- Session Pooler 호스트(`aws-0-ap-southeast-1.pooler.supabase.com`)가 IPv4로 응답하는 것까지 확인함
 - **실제 DB에 붙여서 `bootRun`까지 돌려보지는 못했다** — 이 개발 환경 자체가 Supabase Direct
-  connection(IPv6)에 못 붙는 네트워크라서. 로컬(회사/집 네트워크)에서 처음 실행할 때 연결 에러가
-  나면 위 "Direct connection" caveat부터 확인할 것.
+  connection(IPv6)에 못 붙는 네트워크라서 (Session Pooler는 애초에 이 상황을 위한 것).
+  로컬에서 처음 실행할 때 연결 에러가 나면 `.env.example` 값을 그대로 썼는지부터 확인할 것.
+
+## AWS 배포
+
+Elastic Beanstalk(Java 플랫폼, 단일 인스턴스 t3.micro/프리티어)에 올리는 걸 추천한다.
+자세한 절차는 [`docs/deploy-aws.md`](docs/deploy-aws.md) 참고.
