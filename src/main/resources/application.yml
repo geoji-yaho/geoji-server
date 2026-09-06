@@ -1,0 +1,30 @@
+spring:
+  application:
+    name: ttegeoji-backend
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/postgres}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      # 스키마는 supabase/migrations SQL이 유일한 소스다. Hibernate가 건드리지 않게 validate만 한다.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${SUPABASE_JWT_ISSUER_URI:https://wfovlprcxmsanfuzbfvd.supabase.co/auth/v1}
+
+server:
+  port: ${PORT:8080}
+
+logging:
+  level:
+    org.hibernate.SQL: debug
