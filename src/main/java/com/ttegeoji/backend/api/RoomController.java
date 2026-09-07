@@ -16,6 +16,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -25,6 +26,18 @@ public class RoomController {
 
     private final RoomRepository roomRepository;
     private final RoomMemberRepository roomMemberRepository;
+
+    // 홈 화면(S-03)의 "방 0개 빈 상태" / 방 목록은 여기서 온다 — 내가 멤버인 방들만.
+    @GetMapping
+    public ResponseEntity<List<RoomResponse>> mine(@AuthenticationPrincipal Jwt jwt) {
+        List<UUID> roomIds = roomMemberRepository.findById_UserId(CurrentUser.idOf(jwt))
+                .stream().map(m -> m.getId().getRoomId()).toList();
+
+        List<RoomResponse> rooms = roomRepository.findAllById(roomIds)
+                .stream().map(RoomResponse::from).toList();
+
+        return ResponseEntity.ok(rooms);
+    }
 
     @PostMapping
     @Transactional

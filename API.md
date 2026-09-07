@@ -47,9 +47,34 @@ Authorization: Bearer <supabase access_token>
 { "message": "프로필이 없습니다. 온보딩을 먼저 완료해야 합니다." }
 ```
 
+### `POST /api/me` — 온보딩 (S-01 로그인 직후 ~ S-02 월예산)
+
+Supabase Auth 가입만으로는 `profiles`에 행이 생기지 않는다. **로그인 후 이 API를 한 번
+호출해야** 방 생성/지출 기록 등 나머지 기능이 전부 동작한다 (다른 테이블이 전부
+`profiles.id`를 참조하기 때문).
+
+**Request**
+```json
+{ "nickname": "김규민", "monthlyBudget": 500000 }
+```
+`monthlyBudget`은 생략하면 500,000원(온보딩 화면 기본값)으로 채워진다.
+
+**Response `201`** — `GET /api/me`와 같은 형식
+**Response `409`** — 이미 온보딩을 마친 계정인 경우
+
+### `PUT /api/me`
+
+닉네임/월예산 수정. Request/Response 형식은 `POST /api/me`와 동일.
+
 ---
 
 ## 2. 거지방 (Room)
+
+### `GET /api/rooms`
+
+내가 멤버인 방 목록 (홈 화면 S-03, 방이 없으면 빈 배열).
+
+**Response `200`** — `POST /api/rooms` 응답과 같은 형식의 배열
 
 ### `POST /api/rooms`
 
@@ -253,7 +278,11 @@ Authorization: Bearer <supabase access_token>
 
 ## 6. 주간 거지왕 시상식
 
-패턴 탐지(통계)와 상 이름 발명(LLM)은 이 API 밖에서 끝난 결과를 저장/조회하는 용도다.
+패턴 탐지(통계)와 상 이름 발명(LLM)은 원래 이 API 밖에서 끝난 결과를 저장/조회하는 용도로
+설계했다. 다만 AI 쪽 API 문서가 아직 없어서, 아래 `/generate`만 예외적으로 서버가 최소한의
+통계(주간 최고 지출자)를 직접 계산하고 `AiClient`(현재는 `StubAiClient` — 고정 문구만 반환하는
+자리 표시자)를 호출해 데모가 끝까지 돌아가게 해뒀다. **AI 팀 API가 나오면 `StubAiClient`를
+실제 구현으로 교체하면 되고, 호출부는 안 바꿔도 된다.**
 
 ### `GET /api/rooms/{roomId}/awards?weekStart={YYYY-MM-DD}`
 
@@ -302,11 +331,41 @@ Authorization: Bearer <supabase access_token>
 **Response `201`** — 위 GET과 같은 형식
 **Response `409`** — 같은 방·주·타입·제목 조합이 이미 있는 경우 (유니크 제약)
 
+### `POST /api/rooms/{roomId}/awards/generate?weekStart={YYYY-MM-DD}&weekEnd={YYYY-MM-DD}`
+
+MVP 설계서 13장 "시상식 즉시 생성 버튼"용 데모 엔드포인트. 통계·요청 바디 없이 그 주 지출만
+있으면 바로 상 하나를 만들어준다.
+
+**동작**
+1. `roomId` + 기간의 지출을 유저별로 합산해 최고 지출자를 찾는다 (진짜 패턴 탐지는 아직 없음).
+2. `AiClient.inventWeeklyAward(statsSummary)`를 호출해 상 이름/수상평을 받는다 —
+   지금은 `StubAiClient`라 실제 분석 없이 고정 문구가 온다.
+3. `awardType: invented`로 저장한다.
+
+**Response `201`**
+```json
+{
+  "id": "aw2...",
+  "roomId": "b3f1...",
+  "weekStart": "2026-08-24",
+  "weekEnd": "2026-08-30",
+  "awardType": "invented",
+  "title": "이번 주의 수상한 지출상 (임시)",
+  "winnerUserId": "045e09df-8b88-4a12-96f1-3848c7232c87",
+  "description": "AI 연동 전 데모용 문구입니다. ... 입력 통계: 이번 주 최고 지출자 userId=..., 합계=187000원 (전체 지출 12건)",
+  "statsSnapshot": { "totalsByUser": { "045e09df-...": 187000 }, "expenseCount": 12 },
+  "createdAt": "2026-09-07T00:00:00+09:00"
+}
+```
+**Response `409`** — 그 기간에 지출 기록이 하나도 없는 경우
+
 ---
 
 ## 7. 개인 맞춤 도전 과제
 
 절감 항목 계산과 서술 생성은 이 API 밖에서 끝난 결과를 저장/조회/수락하는 용도다.
+(`AiClient.writeChallengeNarrative`가 이미 준비돼 있지만, 시상식과 달리 `/generate` 같은
+전용 엔드포인트는 아직 안 붙였다 — 필요해지면 6장의 `/generate` 패턴 그대로 추가하면 된다.)
 
 ### `GET /api/rooms/{roomId}/challenges/me?weekStart={YYYY-MM-DD}`
 
@@ -364,6 +423,7 @@ Authorization: Bearer <supabase access_token>
 ## 8. 개인화 순찰 알림
 
 위험 시각 계산(통계)과 안내 문구 생성(LLM)은 이 API 밖에서 끝난 결과를 저장/조회/응답하는 용도다.
+(`AiClient.writePatrolRiskReason`도 준비는 돼 있지만 아직 전용 엔드포인트는 없다.)
 
 ### `GET /api/rooms/{roomId}/patrol-notifications/me`
 
