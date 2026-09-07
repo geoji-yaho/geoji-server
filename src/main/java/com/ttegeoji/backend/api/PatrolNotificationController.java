@@ -49,7 +49,8 @@ public class PatrolNotificationController {
                 .riskReason(request.riskReason())
                 .build();
 
-        notification = patrolNotificationRepository.save(notification);
+        // saveAndFlush: createdAt은 DB 기본값(@Generated)이라 실제 INSERT가 나가야 채워진다.
+        notification = patrolNotificationRepository.saveAndFlush(notification);
         return ResponseEntity.status(HttpStatus.CREATED).body(PatrolNotificationResponse.from(notification));
     }
 

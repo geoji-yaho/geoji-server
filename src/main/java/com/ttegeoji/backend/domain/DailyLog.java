@@ -2,7 +2,9 @@ package com.ttegeoji.backend.domain;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.Generated;
 import org.hibernate.annotations.UuidGenerator;
+import org.hibernate.generator.EventType;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -37,6 +39,7 @@ public class DailyLog {
     @Column(name = "mvp_user_id")
     private UUID mvpUserId;
 
+    @Generated(event = EventType.INSERT)
     @Column(name = "created_at", insertable = false, updatable = false)
     private OffsetDateTime createdAt;
 }

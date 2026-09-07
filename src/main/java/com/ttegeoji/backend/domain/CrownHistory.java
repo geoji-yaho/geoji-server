@@ -2,7 +2,9 @@ package com.ttegeoji.backend.domain;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.Generated;
 import org.hibernate.annotations.UuidGenerator;
+import org.hibernate.generator.EventType;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -26,6 +28,7 @@ public class CrownHistory {
     @Column(name = "user_id", nullable = false)
     private UUID userId;
 
+    @Generated(event = EventType.INSERT)
     @Column(name = "started_at", insertable = false, updatable = false)
     private OffsetDateTime startedAt;
 

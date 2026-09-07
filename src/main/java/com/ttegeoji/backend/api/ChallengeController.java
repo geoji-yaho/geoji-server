@@ -56,7 +56,8 @@ public class ChallengeController {
                 .status(ChallengeStatus.pending)
                 .build();
 
-        challenge = challengeRepository.save(challenge);
+        // saveAndFlush: createdAt은 DB 기본값(@Generated)이라 실제 INSERT가 나가야 채워진다.
+        challenge = challengeRepository.saveAndFlush(challenge);
         return ResponseEntity.status(HttpStatus.CREATED).body(ChallengeResponse.from(challenge));
     }
 

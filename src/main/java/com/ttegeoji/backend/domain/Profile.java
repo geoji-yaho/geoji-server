@@ -2,6 +2,8 @@ package com.ttegeoji.backend.domain;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.Generated;
+import org.hibernate.generator.EventType;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -27,10 +29,12 @@ public class Profile {
     @Column(name = "monthly_budget", nullable = false)
     private Integer monthlyBudget;
 
+    @Generated(event = EventType.INSERT)
     @Column(name = "created_at", insertable = false, updatable = false)
     private OffsetDateTime createdAt;
 
     // DB 트리거(set_updated_at)가 갱신을 전담하므로 JPA는 쓰지 않고 읽기만 한다.
+    @Generated(event = {EventType.INSERT, EventType.UPDATE})
     @Column(name = "updated_at", insertable = false, updatable = false)
     private OffsetDateTime updatedAt;
 }

@@ -3,8 +3,10 @@ package com.ttegeoji.backend.domain;
 import com.ttegeoji.backend.domain.enums.SpiceLevel;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.Generated;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UuidGenerator;
+import org.hibernate.generator.EventType;
 import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
@@ -38,15 +40,20 @@ public class Room {
     private String[] rules;
 
     // gen_random_bytes 기반 DB 기본값을 그대로 쓴다. 앱에서 값을 주면 유니크 제약이 깨질 수 있어 아예 막는다.
+    // @Generated가 없으면 insert 직후 메모리상의 값은 null로 남는다 (Hibernate가 다시 안 읽어옴) —
+    // 방 생성 응답에 초대 코드가 바로 실려야 하므로 반드시 필요하다.
+    @Generated(event = EventType.INSERT)
     @Column(name = "invite_code", insertable = false, updatable = false)
     private String inviteCode;
 
     @Column(name = "created_by", nullable = false)
     private UUID createdBy;
 
+    @Generated(event = EventType.INSERT)
     @Column(name = "created_at", insertable = false, updatable = false)
     private OffsetDateTime createdAt;
 
+    @Generated(event = {EventType.INSERT, EventType.UPDATE}) // DB 트리거(set_updated_at)가 update마다 다시 채운다
     @Column(name = "updated_at", insertable = false, updatable = false)
     private OffsetDateTime updatedAt;
 }

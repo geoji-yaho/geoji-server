@@ -3,8 +3,10 @@ package com.ttegeoji.backend.domain;
 import com.ttegeoji.backend.domain.enums.PatrolResponse;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.Generated;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UuidGenerator;
+import org.hibernate.generator.EventType;
 import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
@@ -47,6 +49,7 @@ public class PatrolNotification {
     @Column(name = "responded_at")
     private OffsetDateTime respondedAt;
 
+    @Generated(event = EventType.INSERT)
     @Column(name = "created_at", insertable = false, updatable = false)
     private OffsetDateTime createdAt;
 }

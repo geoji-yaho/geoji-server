@@ -3,8 +3,10 @@ package com.ttegeoji.backend.domain;
 import com.ttegeoji.backend.domain.enums.AwardType;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.Generated;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UuidGenerator;
+import org.hibernate.generator.EventType;
 import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDate;
@@ -53,6 +55,7 @@ public class WeeklyAward {
     @Column(name = "stats_snapshot", nullable = false, columnDefinition = "jsonb")
     private String statsSnapshot;
 
+    @Generated(event = EventType.INSERT)
     @Column(name = "created_at", insertable = false, updatable = false)
     private OffsetDateTime createdAt;
 }

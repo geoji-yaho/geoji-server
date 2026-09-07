@@ -46,7 +46,8 @@ public class DailyLogController {
                 .mvpUserId(request.mvpUserId())
                 .build();
 
-        log = dailyLogRepository.save(log);
+        // saveAndFlush: createdAt은 DB 기본값(@Generated)이라 실제 INSERT가 나가야 채워진다.
+        log = dailyLogRepository.saveAndFlush(log);
         return ResponseEntity.status(HttpStatus.CREATED).body(DailyLogResponse.from(log));
     }
 }

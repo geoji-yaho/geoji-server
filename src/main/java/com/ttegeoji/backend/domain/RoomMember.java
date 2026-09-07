@@ -2,6 +2,8 @@ package com.ttegeoji.backend.domain;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.Generated;
+import org.hibernate.generator.EventType;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -23,6 +25,7 @@ public class RoomMember {
     @Column(name = "debt_score")
     private BigDecimal debtScore;
 
+    @Generated(event = EventType.INSERT)
     @Column(name = "joined_at", insertable = false, updatable = false)
     private OffsetDateTime joinedAt;
 

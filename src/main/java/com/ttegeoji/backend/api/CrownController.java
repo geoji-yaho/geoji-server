@@ -59,7 +59,8 @@ public class CrownController {
                 .userId(request.userId())
                 .build();
 
-        reign = crownHistoryRepository.save(reign);
+        // saveAndFlush: startedAt은 DB 기본값(@Generated)이라 실제 INSERT가 나가야 채워진다.
+        reign = crownHistoryRepository.saveAndFlush(reign);
         return ResponseEntity.status(HttpStatus.CREATED).body(CrownHistoryResponse.from(reign));
     }
 }

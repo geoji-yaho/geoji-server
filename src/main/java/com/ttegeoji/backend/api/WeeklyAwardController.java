@@ -60,7 +60,8 @@ public class WeeklyAwardController {
                 .statsSnapshot(Json.write(request.statsSnapshot()))
                 .build();
 
-        award = weeklyAwardRepository.save(award);
+        // saveAndFlush: createdAt은 DB 기본값(@Generated)이라 실제 INSERT가 나가야 채워진다.
+        award = weeklyAwardRepository.saveAndFlush(award);
         return ResponseEntity.status(HttpStatus.CREATED).body(WeeklyAwardResponse.from(award));
     }
 
@@ -110,7 +111,7 @@ public class WeeklyAwardController {
                         "expenseCount", weekExpenses.size())))
                 .build();
 
-        award = weeklyAwardRepository.save(award);
+        award = weeklyAwardRepository.saveAndFlush(award);
         return ResponseEntity.status(HttpStatus.CREATED).body(WeeklyAwardResponse.from(award));
     }
 }

@@ -53,7 +53,9 @@ public class RoomController {
                 .rules(request.rules())
                 .createdBy(userId)
                 .build();
-        room = roomRepository.save(room);
+        // saveAndFlush: save()만 쓰면 실제 INSERT가 커밋 시점까지 미뤄져서, DB 기본값(inviteCode)이
+        // @Generated로 다시 채워지기 전에 이 메서드가 응답을 만들어버린다.
+        room = roomRepository.saveAndFlush(room);
 
         roomMemberRepository.save(RoomMember.of(room.getId(), userId));
 

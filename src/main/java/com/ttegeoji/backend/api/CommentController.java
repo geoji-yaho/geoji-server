@@ -50,7 +50,8 @@ public class CommentController {
                 .content(request.content())
                 .build();
 
-        comment = commentRepository.save(comment);
+        // saveAndFlush: createdAt은 DB 기본값(@Generated)이라 실제 INSERT가 나가야 채워진다.
+        comment = commentRepository.saveAndFlush(comment);
         return ResponseEntity.status(HttpStatus.CREATED).body(CommentResponse.from(comment));
     }
 }
