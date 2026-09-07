@@ -1,6 +1,8 @@
 # 떼거지 API 명세서
 
-Base URL: `http://localhost:8080` (배포 후에는 실제 도메인으로 교체)
+Base URL:
+- 배포: `http://Geoji-server-env.eba-wpbw3dvr.ap-northeast-2.elasticbeanstalk.com`
+- 로컬: `http://localhost:8080`
 
 ## 인증
 
