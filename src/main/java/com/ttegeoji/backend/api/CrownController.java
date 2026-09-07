@@ -51,7 +51,10 @@ public class CrownController {
             }
             current.setEndedAt(OffsetDateTime.now());
             current.setDethronedByExpenseId(request.dethronedByExpenseId());
-            crownHistoryRepository.save(current);
+            // saveAndFlush로 UPDATE를 먼저 내보내야 한다. save()만 쓰면 Hibernate가 같은 flush 안에서
+            // INSERT를 UPDATE보다 먼저 실행해서, 새 왕을 넣는 순간 옛 왕의 endedAt이 아직 null이라
+            // 부분 유니크 인덱스(room당 endedAt is null 최대 1개)를 건드려 즉시 실패한다.
+            crownHistoryRepository.saveAndFlush(current);
         });
 
         CrownHistory reign = CrownHistory.builder()
