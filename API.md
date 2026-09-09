@@ -134,9 +134,14 @@ Supabase Auth 가입만으로는 `profiles`에 행이 생기지 않는다. **로
 
 ## 3. 지출 기록 (Expense)
 
-### `POST /api/rooms/{roomId}/expenses`
+**지출은 방 소속이 아니라 유저 소속이다.** 1탭 기록에는 방을 고르는 화면이 없다 — 기록하면
+내가 속한 **모든 방**의 그리드에 같이 뜬다. 여러 방에 있는 사람이 하나 찍으면 그 방들 전부에
+보여야 "친구들이 서로 감시한다"는 서비스 취지가 성립하기 때문. (예전엔 지출이 방 하나에
+고정돼서 다른 방 친구들은 못 보는 버그가 있었음 — 수정됨.)
 
-1탭 지출 기록. 인증된 유저 본인 명의로 기록된다.
+### `POST /api/expenses`
+
+1탭 지출 기록. 인증된 유저 본인 명의로, 방 지정 없이 기록된다.
 
 **Request**
 ```json
@@ -161,7 +166,6 @@ Supabase Auth 가입만으로는 `profiles`에 행이 생기지 않는다. **로
 ```json
 {
   "id": "e7a2...",
-  "roomId": "b3f1...",
   "userId": "045e09df-8b88-4a12-96f1-3848c7232c87",
   "amount": 5500,
   "category": "카페",
@@ -173,7 +177,9 @@ Supabase Auth 가입만으로는 `profiles`에 행이 생기지 않는다. **로
 
 ### `GET /api/rooms/{roomId}/expenses?from={ISO datetime}&to={ISO datetime}`
 
-홈 그리드(멤버 × 시간대)를 그리기 위한 기간 조회. `spentAt` 내림차순.
+홈 그리드(멤버 × 시간대)를 그리기 위한 기간 조회. **이 방의 멤버들**이 그 기간에 기록한 지출을
+`spentAt` 내림차순으로 반환 — 지출 자체엔 방 정보가 없고, 요청 시점에 "누가 이 방 멤버인지"로
+걸러진다.
 
 **Query**
 - `from`, `to` — 둘 다 필수, ISO 8601 (`2026-09-01T00:00:00+09:00` 형식)
@@ -183,7 +189,6 @@ Supabase Auth 가입만으로는 `profiles`에 행이 생기지 않는다. **로
 [
   {
     "id": "e7a2...",
-    "roomId": "b3f1...",
     "userId": "045e09df-8b88-4a12-96f1-3848c7232c87",
     "amount": 5500,
     "category": "카페",
@@ -198,9 +203,13 @@ Supabase Auth 가입만으로는 `profiles`에 행이 생기지 않는다. **로
 
 ## 4. 격자 칸 댓글 (조리돌림)
 
-### `GET /api/expenses/{expenseId}/comments`
+같은 지출이 여러 방에 동시에 보일 수 있으니, 댓글은 **어느 방 그리드에서 보고 달았는지**를
+URL에 명시해야 한다. 같은 지출이라도 방마다 댓글 스레드가 분리된다 — A방 사람이 단 댓글이
+B방에는 안 보임.
 
-특정 지출 기록에 달린 댓글을 시간순으로 조회.
+### `GET /api/rooms/{roomId}/expenses/{expenseId}/comments`
+
+특정 방 맥락에서, 특정 지출 기록에 달린 댓글을 시간순으로 조회.
 
 **Response `200`**
 ```json
@@ -216,7 +225,7 @@ Supabase Auth 가입만으로는 `profiles`에 행이 생기지 않는다. **로
 ]
 ```
 
-### `POST /api/expenses/{expenseId}/comments`
+### `POST /api/rooms/{roomId}/expenses/{expenseId}/comments`
 
 **Request**
 ```json
@@ -225,7 +234,8 @@ Supabase Auth 가입만으로는 `profiles`에 행이 생기지 않는다. **로
 `content`는 1~500자.
 
 **Response `201`** — 위와 같은 형식의 댓글 객체 1개
-**Response `400`** — `expenseId`가 존재하지 않는 지출인 경우
+**Response `400`** — `expenseId`가 존재하지 않거나, 지출 작성자가 이 방 멤버가 아닌 경우
+**Response `409`** — 댓글 작성자 본인이 이 방 멤버가 아닌 경우
 
 실시간 반영은 이 API가 아니라 Supabase Realtime(`comments` 테이블 publication)이 담당한다.
 클라이언트는 저장 후 이 API로 응답을 받고, 다른 멤버 화면은 Realtime 구독으로 갱신된다.

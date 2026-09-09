@@ -7,7 +7,6 @@ import com.ttegeoji.backend.repository.ExpenseRepository;
 import com.ttegeoji.backend.security.CurrentUser;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -15,11 +14,12 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.OffsetDateTime;
-import java.util.List;
 import java.util.UUID;
 
+// 지출은 특정 방 소속이 아니라 유저 소속이다 — 1탭 기록에 방을 고르는 화면이 없으니, 기록하면
+// 내가 속한 모든 방의 그리드에 같이 뜬다. 방별 조회는 ExpenseGridController 쪽에 있다.
 @RestController
-@RequestMapping("/api/rooms/{roomId}/expenses")
+@RequestMapping("/api/expenses")
 @RequiredArgsConstructor
 public class ExpenseController {
 
@@ -28,11 +28,9 @@ public class ExpenseController {
     @PostMapping
     public ResponseEntity<ExpenseResponse> create(
             @AuthenticationPrincipal Jwt jwt,
-            @PathVariable UUID roomId,
             @Valid @RequestBody CreateExpenseRequest request) {
 
         Expense expense = Expense.builder()
-                .roomId(roomId)
                 .userId(CurrentUser.idOf(jwt))
                 .amount(request.amount())
                 .category(request.category())
@@ -43,21 +41,5 @@ public class ExpenseController {
 
         expense = expenseRepository.save(expense);
         return ResponseEntity.status(HttpStatus.CREATED).body(ExpenseResponse.from(expense));
-    }
-
-    // 홈 그리드: 멤버 x 시간대 지출을 그리기 위한 기간 조회
-    @GetMapping
-    public ResponseEntity<List<ExpenseResponse>> listForGrid(
-            @PathVariable UUID roomId,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime from,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime to) {
-
-        List<ExpenseResponse> expenses = expenseRepository
-                .findByRoomIdAndSpentAtBetweenOrderBySpentAtDesc(roomId, from, to)
-                .stream()
-                .map(ExpenseResponse::from)
-                .toList();
-
-        return ResponseEntity.ok(expenses);
     }
 }

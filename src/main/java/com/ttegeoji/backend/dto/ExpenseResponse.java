@@ -8,7 +8,6 @@ import java.util.UUID;
 
 public record ExpenseResponse(
         UUID id,
-        UUID roomId,
         UUID userId,
         Integer amount,
         String category,
@@ -18,7 +17,7 @@ public record ExpenseResponse(
 ) {
     public static ExpenseResponse from(Expense e) {
         return new ExpenseResponse(
-                e.getId(), e.getRoomId(), e.getUserId(), e.getAmount(),
+                e.getId(), e.getUserId(), e.getAmount(),
                 e.getCategory(), e.getMemo(), e.getSource(), e.getSpentAt());
     }
 }

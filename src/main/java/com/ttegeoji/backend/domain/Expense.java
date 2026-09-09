@@ -25,9 +25,8 @@ public class Expense {
     @UuidGenerator
     private UUID id;
 
-    @Column(name = "room_id", nullable = false)
-    private UUID roomId;
-
+    // 방 소유가 아니라 유저 소유다. 이 유저가 속한 모든 방의 그리드에 같은 지출이 보여야 하므로
+    // 특정 방에 고정하지 않는다 — 노출 대상은 room_members 조인으로 그때그때 계산한다.
     @Column(name = "user_id", nullable = false)
     private UUID userId;
 

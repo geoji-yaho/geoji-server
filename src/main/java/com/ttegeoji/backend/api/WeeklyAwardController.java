@@ -77,8 +77,7 @@ public class WeeklyAwardController {
         OffsetDateTime from = weekStart.atStartOfDay(ZoneOffset.UTC).toOffsetDateTime();
         OffsetDateTime to = weekEnd.plusDays(1).atStartOfDay(ZoneOffset.UTC).toOffsetDateTime();
 
-        List<Expense> weekExpenses = expenseRepository
-                .findByRoomIdAndSpentAtBetweenOrderBySpentAtDesc(roomId, from, to);
+        List<Expense> weekExpenses = expenseRepository.findForRoomGrid(roomId, from, to);
 
         if (weekExpenses.isEmpty()) {
             throw new IllegalStateException("이번 주 지출 데이터가 없어 상을 만들 수 없습니다.");
