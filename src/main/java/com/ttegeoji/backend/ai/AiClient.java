@@ -14,6 +14,12 @@ public interface AiClient {
 
     String writePatrolRiskReason(String nickname, String riskWindowSummary);
 
+    // 유죄/무죄 투표가 마감된 지출 재판의 판결문 작성. 유죄면 무지출 형(일수)까지 같이 정한다.
+    VerdictCopy judge(String caseSummary, long guiltyVotes, long notGuiltyVotes, boolean guilty);
+
     record AwardCopy(String title, String description) {
+    }
+
+    record VerdictCopy(String verdictText, int sentenceDays) {
     }
 }

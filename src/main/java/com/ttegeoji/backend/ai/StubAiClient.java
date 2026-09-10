@@ -30,4 +30,19 @@ public class StubAiClient implements AiClient {
     public String writePatrolRiskReason(String nickname, String riskWindowSummary) {
         return nickname + "님, " + riskWindowSummary + " 시간대가 위험합니다. (AI 연동 전 데모용 문구)";
     }
+
+    @Override
+    public VerdictCopy judge(String caseSummary, long guiltyVotes, long notGuiltyVotes, boolean guilty) {
+        if (!guilty) {
+            return new VerdictCopy(
+                    "무죄. 배심원 투표 결과 무죄 " + notGuiltyVotes + "표, 유죄 " + guiltyVotes + "표로 무죄가 우세했습니다. "
+                            + "사건 개요: " + caseSummary + " (AI 연동 전 데모용 문구)",
+                    0);
+        }
+        int sentenceDays = 3;
+        return new VerdictCopy(
+                "유죄. 무기징역, " + sentenceDays + "일 무지출형에 처한다. 배심원 투표 결과 유죄 " + guiltyVotes
+                        + "표, 무죄 " + notGuiltyVotes + "표. 사건 개요: " + caseSummary + " (AI 연동 전 데모용 문구)",
+                sentenceDays);
+    }
 }

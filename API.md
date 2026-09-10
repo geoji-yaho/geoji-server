@@ -549,3 +549,84 @@ MVP 설계서 13장 "시상식 즉시 생성 버튼"용 데모 엔드포인트. 
 ```
 
 `debtScore`(거지력) 계산 로직 자체는 여기 없다 — 별도 배치가 채워 넣는 값을 그대로 보여줄 뿐이다.
+
+---
+
+## 11. 지출 재판 (유죄/무죄 투표 → AI 판결 → 형 집행)
+
+와이어프레임 흐름 B: 지출 등록 → 방 피드 카드에서 유죄/무죄 투표 → 마감(또는 즉시 판결
+버튼) 시 AI가 판결문·형량을 정함 → 유죄면 무지출 형 집행. **`quick_tap`("돈 썼어요")
+지출만 재판 대상이다 — `purchase_check`("살까 말까")는 대상이 아니다.**
+
+재판은 별도로 "여는" API가 없다 — 그 방·지출 조합으로 처음 조회하거나 투표하는 순간
+자동 생성된다. 마감 시한은 새로 받지 않고 **그 방의 `voteDeadlineMinutes`**(방 생성 시
+정한 값)를 그대로 써서, 생성 시점 + `voteDeadlineMinutes`로 계산한다.
+
+투표는 **방 멤버 전원**이 할 수 있다 (배심원단을 따로 뽑지 않음). 단, 지출 작성자 본인은
+투표할 수 없고, 한 사람당 한 표만 가능하다.
+
+AI 판결문·형량 생성은 아직 `StubAiClient`다 (6장 시상식과 같은 자리 표시자 패턴) —
+AI 팀 API가 나오면 `AiClient.judge(...)` 구현만 교체하면 된다.
+
+### `GET /api/rooms/{roomId}/expenses/{expenseId}/trial`
+
+재판 현황 조회 (없으면 이 호출로 자동 생성됨). 방 멤버만 조회 가능.
+
+**Response `200`**
+```json
+{
+  "id": "tr1...",
+  "roomId": "b3f1...",
+  "expenseId": "e7a2...",
+  "votingDeadline": "2026-09-06T21:03:12+09:00",
+  "verdict": null,
+  "verdictText": null,
+  "sentenceDays": null,
+  "sentenceStartedAt": null,
+  "sentenceEndedAt": null,
+  "judgedAt": null,
+  "guiltyVotes": 3,
+  "notGuiltyVotes": 1,
+  "myVote": "guilty",
+  "votes": [
+    { "id": "v1...", "voterUserId": "6db45245-5518-40e8-92dc-7e8daf8e65fc", "verdict": "guilty", "reason": "밥이 없으면 라면을 드셨어야죠.", "createdAt": "2026-09-06T15:10:00+09:00" }
+  ]
+}
+```
+`myVote`는 요청자 본인이 아직 투표하지 않았으면 `null`.
+
+**Response `400`** — `expenseId`가 없거나, `purchase_check` 지출이거나, 지출 작성자가
+이 방 멤버가 아닌 경우
+**Response `409`** — 요청자 본인이 이 방 멤버가 아닌 경우
+
+### `POST /api/rooms/{roomId}/expenses/{expenseId}/votes`
+
+유죄/무죄 투표. S-14 화면에서 호출.
+
+**Request**
+```json
+{ "verdict": "guilty", "reason": "밥이 없으면 라면을 드셨어야죠." }
+```
+`verdict`: `guilty` \| `not_guilty`, `reason`은 1~500자 필수.
+
+**Response `201`** — 갱신된 재판 현황 (위 `GET .../trial`과 같은 형식)
+**Response `400`** — 존재하지 않는 지출
+**Response `409`**
+- 본인 지출에 투표하려는 경우 — `{ "message": "본인 지출에는 투표할 수 없습니다." }`
+- 이미 투표한 경우 — `{ "message": "이미 투표했습니다." }`
+- 마감된 경우 — `{ "message": "투표가 마감되었습니다." }`
+- 이미 판결이 확정된 경우 — `{ "message": "이미 판결이 확정된 재판입니다." }`
+
+### `POST /api/rooms/{roomId}/expenses/{expenseId}/trial/judge`
+
+MVP 데모용 "즉시 판결" — 6장 시상식 `/generate`와 같은 패턴. 마감을 기다리지 않고
+지금까지 모인 표로 바로 판결한다.
+
+**동작**
+1. 지금까지의 유죄/무죄 표를 집계한다 (동률이면 무죄).
+2. `AiClient.judge(...)`를 호출해 판결문과 (유죄일 때만) 무지출 형 일수를 받는다.
+3. 유죄면 `sentenceStartedAt`을 지금, `sentenceEndedAt`을 `sentenceStartedAt + sentenceDays`로 채운다.
+
+**Response `200`** — 확정된 재판 (`verdict`, `verdictText`, 유죄면 `sentenceDays` 등이 채워짐)
+**Response `400`** — 아직 투표가 시작되지 않은 재판(`GET .../trial`을 먼저 호출한 적이 없음)
+**Response `409`** — 투표가 하나도 없거나, 이미 판결이 확정된 경우
