@@ -40,9 +40,19 @@ public class ProfileController {
             throw new IllegalStateException("이미 온보딩이 완료된 계정입니다.");
         }
 
+        // 카카오 등 소셜 로그인이면 Supabase가 JWT에 넣어준 프로필(닉네임·프로필사진)을 그대로 쓴다.
+        // 요청에 nickname을 직접 보냈으면 그게 우선이다 (온보딩 화면에서 수정했을 수 있으므로).
+        String nickname = request.nickname() != null && !request.nickname().isBlank()
+                ? request.nickname()
+                : CurrentUser.nicknameOf(jwt);
+        if (nickname == null || nickname.isBlank()) {
+            throw new IllegalArgumentException("닉네임을 입력해주세요.");
+        }
+
         Profile profile = Profile.builder()
                 .id(CurrentUser.idOf(jwt))
-                .nickname(request.nickname())
+                .nickname(nickname)
+                .avatarUrl(CurrentUser.avatarUrlOf(jwt))
                 .monthlyBudget(request.monthlyBudget() != null ? request.monthlyBudget() : DEFAULT_MONTHLY_BUDGET)
                 .build();
 
@@ -59,7 +69,9 @@ public class ProfileController {
         Profile profile = profileRepository.findById(CurrentUser.idOf(jwt))
                 .orElseThrow(() -> new IllegalStateException("프로필이 없습니다. 온보딩을 먼저 완료해야 합니다."));
 
-        profile.setNickname(request.nickname());
+        if (request.nickname() != null && !request.nickname().isBlank()) {
+            profile.setNickname(request.nickname());
+        }
         if (request.monthlyBudget() != null) {
             profile.setMonthlyBudget(request.monthlyBudget());
         }

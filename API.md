@@ -59,9 +59,14 @@ Supabase Auth 가입만으로는 `profiles`에 행이 생기지 않는다. **로
 ```json
 { "nickname": "김규민", "monthlyBudget": 500000 }
 ```
-`monthlyBudget`은 생략하면 500,000원(온보딩 화면 기본값)으로 채워진다.
+`nickname`은 생략 가능 — **카카오 등 소셜 로그인이면 Supabase가 JWT에 넣어준 프로필
+닉네임(`user_metadata.name`/`nickname`/`full_name` 중 먼저 있는 값)으로 자동 채워진다.**
+프로필 사진(`avatarUrl`)도 같은 방식으로 자동 채워진다 (`user_metadata.avatar_url`/`picture`).
+요청에 `nickname`을 직접 보내면 그게 우선한다. 소셜 메타데이터도 없고 요청에도 없으면(이메일
+가입 등) `400`. `monthlyBudget`은 생략하면 500,000원(온보딩 화면 기본값)으로 채워진다.
 
 **Response `201`** — `GET /api/me`와 같은 형식
+**Response `400`** — 닉네임을 못 채운 경우(`{ "message": "닉네임을 입력해주세요." }`)
 **Response `409`** — 이미 온보딩을 마친 계정인 경우
 
 ### `PUT /api/me`
