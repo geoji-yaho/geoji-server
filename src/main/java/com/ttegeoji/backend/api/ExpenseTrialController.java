@@ -91,6 +91,11 @@ public class ExpenseTrialController {
         if (!roomMemberRepository.existsById_RoomIdAndId_UserId(roomId, voterId)) {
             throw new IllegalStateException("이 방의 멤버만 투표할 수 있습니다.");
         }
+        // VerdictType엔 APPROVED/REJECTED("살까 말까" 구매 동의/기각)도 있지만, 지출 재판은
+        // GUILTY/NOT_GUILTY만 유효하다 — 여기서 막지 않으면 판결 집계(guilty vs 나머지)가 깨진다.
+        if (request.verdict() != VerdictType.GUILTY && request.verdict() != VerdictType.NOT_GUILTY) {
+            throw new IllegalArgumentException("지출 재판은 GUILTY 또는 NOT_GUILTY만 투표할 수 있습니다.");
+        }
 
         Expense expense = expenseRepository.findById(expenseId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 지출 기록입니다."));
@@ -143,7 +148,7 @@ public class ExpenseTrialController {
             throw new IllegalStateException("아직 투표가 없어 판결할 수 없습니다.");
         }
 
-        long guiltyVotes = votes.stream().filter(v -> v.getVerdict() == VerdictType.guilty).count();
+        long guiltyVotes = votes.stream().filter(v -> v.getVerdict() == VerdictType.GUILTY).count();
         long notGuiltyVotes = votes.size() - guiltyVotes;
         boolean isGuilty = guiltyVotes > notGuiltyVotes;
 
@@ -155,7 +160,7 @@ public class ExpenseTrialController {
 
         AiClient.VerdictCopy copy = aiClient.judge(caseSummary, guiltyVotes, notGuiltyVotes, isGuilty);
 
-        trial.setVerdict(isGuilty ? VerdictType.guilty : VerdictType.not_guilty);
+        trial.setVerdict(isGuilty ? VerdictType.GUILTY : VerdictType.NOT_GUILTY);
         trial.setVerdictText(copy.verdictText());
         trial.setJudgedAt(OffsetDateTime.now());
         if (isGuilty) {
