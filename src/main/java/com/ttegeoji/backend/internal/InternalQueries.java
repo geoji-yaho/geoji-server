@@ -1,0 +1,217 @@
+package com.ttegeoji.backend.internal;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
+import org.springframework.stereotype.Component;
+
+import java.sql.Array;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.OffsetDateTime;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * snapshot·resolve-evidence 조회(10 §4.1·§4.2). 앞 작업의 repository 를 고치지 않으려고 JdbcTemplate 으로 따로 둔다.
+ * native enum 컬럼은 ::text 로 읽고, 바인드가 필요하면 CAST(? AS <type>) 로 넣는다. 잠그지 않는다.
+ */
+@Component
+@RequiredArgsConstructor
+public class InternalQueries {
+
+    public record PostRow(UUID id, UUID authorId, String postType, int amountKrw, String category, String item,
+                          String reason, int version, int audienceVersion, boolean publicShareEnabled,
+                          UUID submissionId, OffsetDateTime deletedAt, OffsetDateTime createdAt) {
+    }
+
+    public record RoomRow(UUID id, String spiceLevel, int ruleVersion, List<String> rules, OffsetDateTime createdAt) {
+    }
+
+    public record VerdictRow(UUID id, UUID postId, int verdictVersion, String juryResult, String policySnapshot,
+                             OffsetDateTime confirmedAt, OffsetDateTime deadlineAt, String sentence,
+                             String sentenceSource, String sentencingReason, String reasonSource,
+                             String appliedIntensity, String targetIntensities, String defaultIntensity) {
+    }
+
+    private static final RowMapper<PostRow> POST_ROW = (rs, i) -> new PostRow(
+            rs.getObject("id", UUID.class),
+            rs.getObject("author_id", UUID.class),
+            rs.getString("post_type"),
+            rs.getInt("amount_krw"),
+            rs.getString("category"),
+            rs.getString("item"),
+            rs.getString("reason"),
+            rs.getInt("version"),
+            rs.getInt("audience_version"),
+            rs.getBoolean("public_share_enabled"),
+            rs.getObject("submission_id", UUID.class),
+            rs.getObject("deleted_at", OffsetDateTime.class),
+            rs.getObject("created_at", OffsetDateTime.class));
+
+    private static final RowMapper<RoomRow> ROOM_ROW = (rs, i) -> new RoomRow(
+            rs.getObject("id", UUID.class),
+            rs.getString("spice_level"),
+            rs.getInt("rule_version"),
+            textArray(rs, "rules"),
+            rs.getObject("created_at", OffsetDateTime.class));
+
+    private static final RowMapper<VerdictRow> VERDICT_ROW = (rs, i) -> new VerdictRow(
+            rs.getObject("id", UUID.class),
+            rs.getObject("post_id", UUID.class),
+            rs.getInt("verdict_version"),
+            rs.getString("jury_result"),
+            rs.getString("policy_snapshot"),
+            rs.getObject("confirmed_at", OffsetDateTime.class),
+            rs.getObject("deadline_at", OffsetDateTime.class),
+            rs.getString("sentence"),
+            rs.getString("sentence_source"),
+            rs.getString("sentencing_reason"),
+            rs.getString("reason_source"),
+            rs.getString("applied_intensity"),
+            rs.getString("target_intensities"),
+            rs.getString("default_intensity"));
+
+    private static final String VERDICT_COLUMNS = """
+            id, post_id, verdict_version, jury_result::text AS jury_result, policy_snapshot::text AS policy_snapshot,
+            confirmed_at, deadline_at, sentence::text AS sentence, sentence_source, sentencing_reason, reason_source,
+            applied_intensity::text AS applied_intensity, target_intensities::text AS target_intensities,
+            default_intensity::text AS default_intensity
+            """;
+
+    private final JdbcTemplate jdbcTemplate;
+
+    /** 삭제된 게시물도 돌려준다. 삭제 판정은 호출자가 한다. */
+    public Optional<PostRow> findPost(UUID postId) {
+        return jdbcTemplate.query("""
+                        SELECT id, author_id, post_type::text AS post_type, amount_krw, category, item, reason, version,
+                               audience_version, public_share_enabled, submission_id, deleted_at, created_at
+                          FROM posts
+                         WHERE id = ?
+                        """, POST_ROW, postId)
+                .stream().findFirst();
+    }
+
+    /** 게시물이 공유된 방. 만든 순서(같으면 id)로 정렬한다. */
+    public List<RoomRow> findSharedRooms(UUID postId) {
+        // 철회된 공유는 행을 남기고 revoked_at 으로 표시한다(feat-privacy 004b). 사건 방·후보 scope 가 모두 이 쿼리를 쓴다
+        return jdbcTemplate.query("""
+                SELECT r.id, r.spice_level::text AS spice_level, r.rule_version, r.rules, r.created_at
+                  FROM post_rooms pr
+                  JOIN rooms r ON r.id = pr.room_id
+                 WHERE pr.post_id = ? AND pr.revoked_at IS NULL
+                 ORDER BY r.created_at, r.id
+                """, ROOM_ROW, postId);
+    }
+
+    public Optional<VerdictRow> findVerdict(UUID verdictId) {
+        return jdbcTemplate.query("SELECT " + VERDICT_COLUMNS + " FROM verdicts WHERE id = ?", VERDICT_ROW, verdictId)
+                .stream().findFirst();
+    }
+
+    public Optional<VerdictRow> findVerdictByPostId(UUID postId) {
+        return jdbcTemplate.query("SELECT " + VERDICT_COLUMNS + " FROM verdicts WHERE post_id = ?", VERDICT_ROW, postId)
+                .stream().findFirst();
+    }
+
+    /** votes 를 verdict 값별로 센다. 표가 없는 값은 키가 없다. */
+    public Map<String, Integer> countVotesByVerdict(UUID postId) {
+        Map<String, Integer> counts = new HashMap<>();
+        jdbcTemplate.query("""
+                SELECT verdict::text AS verdict, count(*) AS n
+                  FROM votes
+                 WHERE post_id = ?
+                 GROUP BY verdict
+                """, rs -> {
+            counts.put(rs.getString("verdict"), rs.getInt("n"));
+        }, postId);
+        return counts;
+    }
+
+    /** submissions.intake_result jsonb 문자열. submission 이 없거나 값이 NULL 이면 빈 결과. */
+    public Optional<String> findIntakeResult(UUID submissionId) {
+        return jdbcTemplate.query("SELECT intake_result::text AS intake_result FROM submissions WHERE id = ?",
+                        (rs, i) -> rs.getString("intake_result"), submissionId)
+                .stream().filter(java.util.Objects::nonNull).findFirst();
+    }
+
+    // --- resolve-evidence(10 §4.2) ---
+
+    public record RecentVerdictRow(UUID postId, int postVersion, String category, int amountKrw, String reason,
+                                   String juryResult, String sentence, OffsetDateTime confirmedAt) {
+    }
+
+    public Optional<Integer> findMonthlyBudget(UUID profileId) {
+        return jdbcTemplate.query("SELECT monthly_budget FROM profiles WHERE id = ?",
+                        (rs, i) -> rs.getInt("monthly_budget"), profileId)
+                .stream().findFirst();
+    }
+
+    /** 작성자의 삭제 안 된 spent 게시물 amount_krw 합. from ≤ created_at ≤ toInclusive(9/15 답 1, 현재 사건 포함). */
+    public long sumSpentAmount(UUID authorId, OffsetDateTime from, OffsetDateTime toInclusive) {
+        Long sum = jdbcTemplate.queryForObject("""
+                SELECT coalesce(sum(amount_krw), 0)
+                  FROM posts
+                 WHERE author_id = ? AND post_type = CAST('spent' AS post_type) AND deleted_at IS NULL
+                   AND created_at >= ? AND created_at <= ?
+                """, Long.class, authorId, from, toInclusive);
+        return sum == null ? 0 : sum;
+    }
+
+    /**
+     * 10 §4.2 반복 집계. 현재 사건 제외, from ≤ created_at < toExclusive, 같은 카테고리 spent 건수.
+     * "확정 소비" 는 AI domain/aggregation.py 와 같게 post_type = spent 로 본다(판결 확정 여부 무관).
+     */
+    public int countRepeatSameCategory(UUID authorId, UUID excludePostId, String category, OffsetDateTime from,
+                                       OffsetDateTime toExclusive) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT count(*)
+                  FROM posts
+                 WHERE author_id = ? AND id <> ? AND category = ? AND post_type = CAST('spent' AS post_type)
+                   AND deleted_at IS NULL AND created_at >= ? AND created_at < ?
+                """, Integer.class, authorId, excludePostId, category, from, toExclusive);
+        return count == null ? 0 : count;
+    }
+
+    /** 작성자의 다른 게시물 중 from ≤ confirmed_at < toExclusive, FINAL 이고 sentence 가 있는 평결. 최근 순. */
+    public List<RecentVerdictRow> findRecentFinalVerdicts(UUID authorId, UUID excludePostId, OffsetDateTime from,
+                                                          OffsetDateTime toExclusive) {
+        return jdbcTemplate.query("""
+                SELECT p.id AS post_id, p.version AS post_version, p.category, p.amount_krw, p.reason,
+                       v.jury_result::text AS jury_result, v.sentence::text AS sentence, v.confirmed_at
+                  FROM verdicts v
+                  JOIN posts p ON p.id = v.post_id
+                 WHERE p.author_id = ? AND p.id <> ? AND p.deleted_at IS NULL
+                   AND v.sentence_status = 'FINAL' AND v.sentence IS NOT NULL
+                   AND v.confirmed_at >= ? AND v.confirmed_at < ?
+                 ORDER BY v.confirmed_at DESC, v.id
+                """, (rs, i) -> new RecentVerdictRow(
+                rs.getObject("post_id", UUID.class),
+                rs.getInt("post_version"),
+                rs.getString("category"),
+                rs.getInt("amount_krw"),
+                rs.getString("reason"),
+                rs.getString("jury_result"),
+                rs.getString("sentence"),
+                rs.getObject("confirmed_at", OffsetDateTime.class)), authorId, excludePostId, from, toExclusive);
+    }
+
+    /** verdicts.sentence_status 가 FINAL 인가. */
+    public boolean isFinal(UUID verdictId) {
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM verdicts WHERE id = ? AND sentence_status = 'FINAL')",
+                Boolean.class, verdictId));
+    }
+
+    private static List<String> textArray(ResultSet rs, String column) throws SQLException {
+        Array array = rs.getArray(column);
+        if (array == null) {
+            return List.of();
+        }
+        return Arrays.asList((String[]) array.getArray());
+    }
+}
