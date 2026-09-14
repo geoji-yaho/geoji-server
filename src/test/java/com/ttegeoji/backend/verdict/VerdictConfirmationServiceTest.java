@@ -56,6 +56,13 @@ class VerdictConfirmationServiceTest extends PostgresContainerSupport {
     @Autowired
     private PlatformTransactionManager transactionManager;
 
+    // 비유죄(notGuilty·agree·disagree)의 policy_snapshot — 최저 밴드(사용자 9/15)
+    private static final Map<String, Object> LOWEST_BAND = Map.of(
+            "version", "sentencing-band-v1",
+            "allowed_sentences", List.of(Map.of("code", "probation", "rank", 1)),
+            "fallback_sentence", "probation",
+            "reason_required", true);
+
     @Test
     @DisplayName("10 §3 전원 투표 즉시 확정 — verdict 필드·policy_snapshot·강도·SENTENCE job 1개·deadline 일치")
     void allVotedConfirmsImmediately() {
@@ -169,7 +176,7 @@ class VerdictConfirmationServiceTest extends PostgresContainerSupport {
     }
 
     @Test
-    @DisplayName("10 §3 considering disagree → SENTENCE job 있음, policy_snapshot null")
+    @DisplayName("10 §3 considering disagree → SENTENCE job 있음, policy_snapshot 최저 밴드")
     void disagreeHasJob() {
         UUID author = profile();
         UUID room = room("mild", "now()");
@@ -183,12 +190,35 @@ class VerdictConfirmationServiceTest extends PostgresContainerSupport {
 
         assertThat(service.onVoteCast(post)).isTrue();
 
-        assertThat(verdictRow(post)).containsEntry("jury_result", "disagree").containsEntry("policy_is_null", true);
+        Map<String, Object> v = verdictRow(post);
+        assertThat(v).containsEntry("jury_result", "disagree").containsEntry("policy_is_null", false);
+        assertThat(Json.read((String) v.get("policy_snapshot"))).isEqualTo(LOWEST_BAND);
         assertThat(sentenceJobCount(post)).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("10 §3 notGuilty → SENTENCE job 있음(양형관만 건너뜀), policy_snapshot null")
+    @DisplayName("10 §3 agree → SENTENCE job 있음, policy_snapshot 최저 밴드")
+    void agreeHasLowestBandPolicy() {
+        UUID author = profile();
+        UUID room = room("mild", "now()");
+        UUID m1 = profile();
+        UUID m2 = profile();
+        member(room, m1);
+        member(room, m2);
+        UUID post = post(author, "considering", "now() + interval '1 hour'", room);
+        vote(post, m1, room, VerdictType.agree);
+        vote(post, m2, room, VerdictType.agree);
+
+        assertThat(service.onVoteCast(post)).isTrue();
+
+        Map<String, Object> v = verdictRow(post);
+        assertThat(v).containsEntry("jury_result", "agree");
+        assertThat(Json.read((String) v.get("policy_snapshot"))).isEqualTo(LOWEST_BAND);
+        assertThat(sentenceJobCount(post)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("10 §3 notGuilty → SENTENCE job 있음(양형관만 건너뜀), policy_snapshot 최저 밴드")
     void notGuiltyHasJob() {
         UUID author = profile();
         UUID room = room("spicy", "now()");
@@ -202,7 +232,9 @@ class VerdictConfirmationServiceTest extends PostgresContainerSupport {
 
         assertThat(service.onVoteCast(post)).isTrue();
 
-        assertThat(verdictRow(post)).containsEntry("jury_result", "notGuilty").containsEntry("policy_is_null", true);
+        Map<String, Object> v = verdictRow(post);
+        assertThat(v).containsEntry("jury_result", "notGuilty").containsEntry("policy_is_null", false);
+        assertThat(Json.read((String) v.get("policy_snapshot"))).isEqualTo(LOWEST_BAND);
         assertThat(sentenceJobCount(post)).isEqualTo(1);
     }
 

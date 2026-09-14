@@ -26,6 +26,7 @@ import java.util.stream.Collectors;
 /**
  * 10 §3 배심원 평결 확정. 전원 투표 즉시(onVoteCast) 또는 마감 스캔(confirmDue).
  * 한 트랜잭션에서 게시물 잠금 → 집계 → verdicts INSERT → SENTENCE 게이트. job 은 verdict 와 같이 커밋된다(10 §13 commit 직후 중단).
+ * policy_snapshot 은 유죄면 유죄율 밴드, 무죄·동의·기각이면 최저 밴드, 각하면 jsonb null.
  * dismissed 는 verdict 만 저장하고, 유죄인데 정책이 비었거나 fallback 이 목록에 없으면 job 없이 ERROR 로그를 남긴다.
  */
 @Slf4j
@@ -116,9 +117,14 @@ public class VerdictConfirmationService {
         int eligible = Math.max(1, juryQueries.eligibleCount(postId, post.authorId()));
         JuryTally.Result tally = JuryTally.tally(post.postType(), votes, eligible, rooms);
 
-        boolean guilty = tally.result() == VerdictType.guilty;
-        SentencingPolicy.Snapshot policy = guilty ? policyForGuiltyRatio.apply(tally.guiltyRatio()) : null;
-        String policyError = policy == null ? null : policyError(policy);
+        // 유죄는 유죄율 밴드. 무죄·동의·기각은 최저 밴드 객체(AI case-snapshot jury.policy 가 필수 객체·minItems 1, 사용자 9/15).
+        // 각하는 job 이 없으니 jsonb null
+        SentencingPolicy.Snapshot policy = switch (tally.result()) {
+            case guilty -> policyForGuiltyRatio.apply(tally.guiltyRatio());
+            case dismissed -> null;
+            default -> SentencingPolicy.forGuiltyRatio(0.5);
+        };
+        String policyError = tally.result() == VerdictType.guilty ? policyError(policy) : null;
 
         Optional<InsertedVerdict> inserted = juryQueries.insertVerdict(postId, tally.result().name(),
                 policy == null ? "null" : Json.write(policyJson(policy)),
