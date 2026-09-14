@@ -139,6 +139,74 @@ public class InternalQueries {
                 .stream().filter(java.util.Objects::nonNull).findFirst();
     }
 
+    // --- resolve-evidence(10 §4.2) ---
+
+    public record RecentVerdictRow(UUID postId, int postVersion, String category, int amountKrw, String reason,
+                                   String juryResult, String sentence, OffsetDateTime confirmedAt) {
+    }
+
+    public Optional<Integer> findMonthlyBudget(UUID profileId) {
+        return jdbcTemplate.query("SELECT monthly_budget FROM profiles WHERE id = ?",
+                        (rs, i) -> rs.getInt("monthly_budget"), profileId)
+                .stream().findFirst();
+    }
+
+    /** 작성자의 삭제 안 된 spent 게시물 amount_krw 합. from ≤ created_at ≤ toInclusive(9/15 답 1, 현재 사건 포함). */
+    public long sumSpentAmount(UUID authorId, OffsetDateTime from, OffsetDateTime toInclusive) {
+        Long sum = jdbcTemplate.queryForObject("""
+                SELECT coalesce(sum(amount_krw), 0)
+                  FROM posts
+                 WHERE author_id = ? AND post_type = CAST('spent' AS post_type) AND deleted_at IS NULL
+                   AND created_at >= ? AND created_at <= ?
+                """, Long.class, authorId, from, toInclusive);
+        return sum == null ? 0 : sum;
+    }
+
+    /**
+     * 10 §4.2 반복 집계. 현재 사건 제외, from ≤ created_at < toExclusive, 같은 카테고리 spent 건수.
+     * "확정 소비" 는 AI domain/aggregation.py 와 같게 post_type = spent 로 본다(판결 확정 여부 무관).
+     */
+    public int countRepeatSameCategory(UUID authorId, UUID excludePostId, String category, OffsetDateTime from,
+                                       OffsetDateTime toExclusive) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT count(*)
+                  FROM posts
+                 WHERE author_id = ? AND id <> ? AND category = ? AND post_type = CAST('spent' AS post_type)
+                   AND deleted_at IS NULL AND created_at >= ? AND created_at < ?
+                """, Integer.class, authorId, excludePostId, category, from, toExclusive);
+        return count == null ? 0 : count;
+    }
+
+    /** 작성자의 다른 게시물 중 from ≤ confirmed_at < toExclusive, FINAL 이고 sentence 가 있는 평결. 최근 순. */
+    public List<RecentVerdictRow> findRecentFinalVerdicts(UUID authorId, UUID excludePostId, OffsetDateTime from,
+                                                          OffsetDateTime toExclusive) {
+        return jdbcTemplate.query("""
+                SELECT p.id AS post_id, p.version AS post_version, p.category, p.amount_krw, p.reason,
+                       v.jury_result::text AS jury_result, v.sentence::text AS sentence, v.confirmed_at
+                  FROM verdicts v
+                  JOIN posts p ON p.id = v.post_id
+                 WHERE p.author_id = ? AND p.id <> ? AND p.deleted_at IS NULL
+                   AND v.sentence_status = 'FINAL' AND v.sentence IS NOT NULL
+                   AND v.confirmed_at >= ? AND v.confirmed_at < ?
+                 ORDER BY v.confirmed_at DESC, v.id
+                """, (rs, i) -> new RecentVerdictRow(
+                rs.getObject("post_id", UUID.class),
+                rs.getInt("post_version"),
+                rs.getString("category"),
+                rs.getInt("amount_krw"),
+                rs.getString("reason"),
+                rs.getString("jury_result"),
+                rs.getString("sentence"),
+                rs.getObject("confirmed_at", OffsetDateTime.class)), authorId, excludePostId, from, toExclusive);
+    }
+
+    /** verdicts.sentence_status 가 FINAL 인가. */
+    public boolean isFinal(UUID verdictId) {
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM verdicts WHERE id = ? AND sentence_status = 'FINAL')",
+                Boolean.class, verdictId));
+    }
+
     private static List<String> textArray(ResultSet rs, String column) throws SQLException {
         Array array = rs.getArray(column);
         if (array == null) {

@@ -201,6 +201,23 @@ class AiJobControllerTest extends PostgresContainerSupport {
     }
 
     @Test
+    @DisplayName("10 §4.2·§4.7 헤더 5종 정상 resolve-evidence → 200, 다섯 키")
+    void resolveOk() throws Exception {
+        UUID generation = UUID.randomUUID();
+        UUID jobId = sentenceCase(generation, LEASE);
+
+        String body = mockMvc.perform(resolveRequest(jobId, generation.toString(),
+                        "{\"candidates\": [], \"include\": [\"rules\", \"aggregates\", \"recent_verdicts\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+
+        JsonNode n = objectMapper.readTree(body);
+        EvidenceShape.assertValid(n);
+        org.assertj.core.api.Assertions.assertThat(n.get("style_comments").isEmpty()).isTrue();
+    }
+
+    @Test
     @DisplayName("10 §4.1 §0.1 9/14 RETAIN 원본 게시물 삭제 → 404 {\"code\":\"NOT_FOUND\"}")
     void retainDeletedPostIs404() throws Exception {
         UUID generation = UUID.randomUUID();

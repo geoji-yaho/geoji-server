@@ -17,6 +17,12 @@ final class InternalFixtures {
              "allowed_sentences": [{"code": "probation", "rank": 1}, {"code": "oneDay", "rank": 2}],
              "fallback_sentence": "oneDay", "reason_required": true}""";
 
+    // 비유죄(notGuilty·agree·disagree)도 최저 밴드 정책 객체를 저장한다(feat-jury, 9/15 답 11)
+    static final String NON_GUILTY_POLICY_JSON = """
+            {"version": "sentencing-band-v1",
+             "allowed_sentences": [{"code": "probation", "rank": 1}],
+             "fallback_sentence": "probation", "reason_required": true}""";
+
     private final JdbcTemplate jdbc;
 
     InternalFixtures(JdbcTemplate jdbc) {
@@ -59,6 +65,26 @@ final class InternalFixtures {
         return post(author, postType, "늦잠 자서 택시 탐", null);
     }
 
+    /** created_at 을 정한 게시물. createdAt 은 timestamptz 문자열("2026-09-15 12:00:00+09"). */
+    UUID post(UUID author, String postType, String category, int amountKrw, String createdAt) {
+        UUID id = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO posts (id, author_id, post_type, amount_krw, category, item, reason, intake_status,
+                                   intake_source, vote_deadline_at, created_at)
+                VALUES (?, ?, CAST(? AS post_type), ?, ?, '품목', '사유', 'PASS', 'AI',
+                        CAST(? AS timestamptz) + interval '1 hour', CAST(? AS timestamptz))
+                """, id, author, postType, amountKrw, category, createdAt, createdAt);
+        return id;
+    }
+
+    void setMonthlyBudget(UUID profileId, int budget) {
+        jdbc.update("UPDATE profiles SET monthly_budget = ? WHERE id = ?", budget, profileId);
+    }
+
+    void setPostVersion(UUID postId, int version) {
+        jdbc.update("UPDATE posts SET version = ? WHERE id = ?", version, postId);
+    }
+
     UUID post(UUID author, String postType, String reason, UUID submissionId) {
         UUID id = UUID.randomUUID();
         jdbc.update("""
@@ -86,13 +112,19 @@ final class InternalFixtures {
     }
 
     UUID verdict(UUID postId, String juryResult) {
+        return verdict(postId, juryResult, null);
+    }
+
+    /** confirmedAt 이 null 이면 now(). */
+    UUID verdict(UUID postId, String juryResult, String confirmedAt) {
         UUID id = UUID.randomUUID();
+        String policy = "guilty".equals(juryResult) ? POLICY_JSON : NON_GUILTY_POLICY_JSON;
         jdbc.update("""
                 INSERT INTO verdicts (id, post_id, jury_result, policy_snapshot, confirmed_at, deadline_at,
                                       target_intensities, default_intensity)
-                VALUES (?, ?, CAST(? AS verdict), CAST(? AS jsonb), now(), now() + interval '10 minutes',
-                        CAST('["mild", "spicy"]' AS jsonb), 'spicy')
-                """, id, postId, juryResult, POLICY_JSON);
+                VALUES (?, ?, CAST(? AS verdict), CAST(? AS jsonb), coalesce(CAST(? AS timestamptz), now()),
+                        now() + interval '10 minutes', CAST('["mild", "spicy"]' AS jsonb), 'spicy')
+                """, id, postId, juryResult, policy, confirmedAt);
         return id;
     }
 

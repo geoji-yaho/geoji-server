@@ -65,6 +65,15 @@ public class CaseSnapshotAssembler {
 
     @Transactional(readOnly = true)
     public CaseSnapshot assemble(JobRow job) {
+        return build(caseSource(job));
+    }
+
+    /** job 이 가리키는 사건 게시물. resolve-evidence 가 같은 범위·같은 404 를 쓰려고 부른다(10 §4.2 자유 조회 아님). */
+    PostRow casePost(JobRow job) {
+        return caseSource(job).post();
+    }
+
+    private CaseSource caseSource(JobRow job) {
         Map<String, Object> payload = readJsonb(job.payload(), new TypeReference<>() {
         });
         CaseSource source = switch (job.kind()) {
@@ -78,8 +87,8 @@ public class CaseSnapshotAssembler {
             }
             case RETAIN -> retainSource(payload);
         };
-        rejectIfDeleted(job, source.post());
-        return build(source);
+        rejectIfDeleted(source.post());
+        return source;
     }
 
     private CaseSource retainSource(Map<String, Object> payload) {
@@ -99,10 +108,10 @@ public class CaseSnapshotAssembler {
 
     /**
      * 삭제된 원본이면 404 NOT_FOUND — 워커는 skip 한다(10 §4.1 9/14).
-     * 10 은 RETAIN(원본 게시물 deleted_at)만 정한다. 다른 kind 에도 적용할지는 미결이라 범위가 정해지면 여기만 고친다.
+     * 10 은 RETAIN 만 정하지만 PREPARE·SENTENCE·TEXT_RETRY 도 같게 한다(9/15 답 10). job 검증 409 는 호출자가 먼저 한다.
      */
-    private static void rejectIfDeleted(JobRow job, PostRow post) {
-        if (job.kind() == JobKind.RETAIN && post.deletedAt() != null) {
+    private static void rejectIfDeleted(PostRow post) {
+        if (post.deletedAt() != null) {
             throw notFound();
         }
     }
@@ -170,18 +179,19 @@ public class CaseSnapshotAssembler {
     }
 
     private static VerdictFinal verdictFinal(VerdictRow verdict) {
-        // applied_intensity 가 NULL 일 때 무엇을 줄지는 미결이라 컬럼 값을 그대로 싣는다
+        // 스키마는 applied_intensity non-null, 컬럼은 NULL 허용 → NULL 이면 default_intensity(9/15 답 9)
+        String appliedIntensity = verdict.appliedIntensity() != null
+                ? verdict.appliedIntensity() : verdict.defaultIntensity();
         return new VerdictFinal(
                 verdict.sentence(),
                 verdict.sentenceSource(),
                 verdict.sentencingReason(),
                 verdict.reasonSource(),
-                verdict.appliedIntensity(),
+                appliedIntensity,
                 banterStrategy(verdict));
     }
 
-    // 미결: 코디네이터 답 대기. 10 §2 에 banter_strategy 저장 자리가 없고 강도별 값 중 하나를 고르는 규칙도 없다.
-    // 읽을 곳이 없어 null(스키마 허용)이다. 값이 정해지면 여기만 고친다
+    // 10 §2 에 banter_strategy 저장 자리가 없어 null(스키마 허용, 9/15 답 8). 저장 자리가 생기면 여기만 고친다
     private static String banterStrategy(VerdictRow verdict) {
         return null;
     }
@@ -257,7 +267,7 @@ public class CaseSnapshotAssembler {
         }
     }
 
-    private static String rfc3339(OffsetDateTime time) {
+    static String rfc3339(OffsetDateTime time) {
         return time == null ? null : time.withOffsetSameInstant(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
     }
 

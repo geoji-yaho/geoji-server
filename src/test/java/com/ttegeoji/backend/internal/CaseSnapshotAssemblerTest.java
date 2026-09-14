@@ -9,6 +9,8 @@ import com.ttegeoji.backend.support.PostgresContainerSupport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpStatus;
@@ -297,6 +299,55 @@ class CaseSnapshotAssemblerTest extends PostgresContainerSupport {
         fx.deletePost(post);
 
         InternalApiException e = rejected(JobKind.RETAIN, InternalFixtures.retainVerdictPayload(verdict));
+
+        assertThat(e.getStatus()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(e.getCode()).isEqualTo("NOT_FOUND");
+    }
+
+    @Test
+    @DisplayName("10 §4.1 RETAIN verdict_final.applied_intensity 컬럼 NULL → default_intensity(9/15 답 9), banter_strategy null")
+    void retainAppliedIntensityFallsBackToDefault() {
+        UUID room = fx.room(author, "spicy", 1);
+        UUID post = sharedPost("spent", room);
+        UUID verdict = fx.verdict(post, "guilty");
+        fx.finalizeVerdict(verdict, "probation", "RULE", null, "TEMPLATE", null);
+
+        JsonNode vf = snapshot(JobKind.RETAIN, InternalFixtures.retainVerdictPayload(verdict)).get("verdict_final");
+
+        assertThat(vf.get("applied_intensity").stringValue()).isEqualTo("spicy");
+        assertThat(vf.get("banter_strategy").isNull()).isTrue();
+    }
+
+    @Test
+    @DisplayName("10 §4.1 비유죄 평결 jury.policy 는 최저 밴드 정책 객체 그대로(9/15 답 11)")
+    void nonGuiltyPolicyIsPassedThrough() {
+        UUID room = fx.room(author, "spicy", 1);
+        UUID post = sharedPost("spent", room);
+        fx.vote(post, room, "notGuilty");
+        UUID verdict = fx.verdict(post, "notGuilty");
+
+        JsonNode policy = snapshot(JobKind.SENTENCE, InternalFixtures.sentencePayload(verdict, post))
+                .get("jury").get("policy");
+
+        assertThat(objectMapper.convertValue(policy, Map.class))
+                .isEqualTo(objectMapper.readValue(InternalFixtures.NON_GUILTY_POLICY_JSON, Map.class));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = JobKind.class, names = {"PREPARE", "SENTENCE", "TEXT_RETRY"})
+    @DisplayName("10 §4.1 PREPARE·SENTENCE·TEXT_RETRY 도 삭제된 게시물 → 404 NOT_FOUND(9/15 답 10)")
+    void deletedPostNotFoundForEveryKind(JobKind kind) {
+        UUID room = fx.room(author, "spicy", 1);
+        UUID post = sharedPost("spent", room);
+        UUID verdict = fx.verdict(post, "guilty");
+        fx.deletePost(post);
+        String payload = switch (kind) {
+            case PREPARE -> InternalFixtures.preparePayload(post);
+            case SENTENCE -> InternalFixtures.sentencePayload(verdict, post);
+            default -> InternalFixtures.textRetryPayload(verdict);
+        };
+
+        InternalApiException e = rejected(kind, payload);
 
         assertThat(e.getStatus()).isEqualTo(HttpStatus.NOT_FOUND);
         assertThat(e.getCode()).isEqualTo("NOT_FOUND");
