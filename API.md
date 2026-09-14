@@ -591,3 +591,113 @@ MVP 데모용 "즉시 판결" — 5장 시상식 `/generate`와 같은 패턴. �
 **Response `200`** — 확정된 재판 (`verdict`, `verdictText`, 유죄면 `sentenceDays` 등이 채워짐)
 **Response `400`** — 아직 투표가 시작되지 않은 재판(`GET .../trial`을 먼저 호출한 적이 없음)
 **Response `409`** — 투표가 하나도 없거나, 이미 판결이 확정된 경우
+
+## 11. 게시물 등록(제출)
+
+재판 흐름의 게시물(`posts`)을 등록한다. 3장 `expenses`와 별개다. 등록 직전에 AI 심문관이 입력을
+한 번 보고(`PASS`·`NEEDS_CLARIFICATION`·`BLOCKED`), 질문이 나오면 사용자는 고치거나(`REVISE`) 그대로
+등록한다(`PROCEED`). 등록되면 게시물이 공유 방들에 올라가고 투표 마감이 정해진다.
+
+**상태 기계**
+
+```
+POST /api/post-submissions
+  ├─ PASS                 → COMPLETED (postId)
+  ├─ NEEDS_CLARIFICATION  → NEEDS_INPUT ── complete PROCEED ───────────────→ COMPLETED
+  │                                     └─ complete REVISE → FINAL_CHECK ─┬ PASS    → COMPLETED
+  │                                                                       └ BLOCKED → BLOCKED
+  └─ BLOCKED              → BLOCKED ───── complete REVISE → FINAL_CHECK(위와 같음)
+```
+
+- 질문(`NEEDS_INPUT`)은 제출당 한 번만 나온다. `FINAL_CHECK`는 질문을 내지 않는다
+- `REVISE`는 제출당 한 번. `FINAL_CHECK`에서 `BLOCKED`가 나오면 더 고칠 수 없다
+- `BLOCKED`는 `PROCEED`로 등록할 수 없다(409)
+- AI API가 느리거나(5초) 꺼져 있어도 등록은 막히지 않는다. 이때 `intakeResult.intakeSource`는 `FALLBACK`,
+  `status`는 `PASS`
+- 투표 마감(게시물 `voteDeadlineAt`) = 등록 시각 + 공유 방 투표 마감 분 중 가장 짧은 값
+
+### `POST /api/post-submissions`
+
+**Request**
+```json
+{
+  "postType": "spent",
+  "amountKrw": 4800,
+  "category": "카페/간식",
+  "item": "아이스 아메리카노",
+  "reason": "야근해서",
+  "roomIds": ["6a1f0c2e-3b7d-4c55-9d7e-2f1b8c0a9e41"]
+}
+```
+
+| 필드 | 규칙 |
+|---|---|
+| `postType` | `spent` \| `considering` |
+| `amountKrw` | 양의 정수 |
+| `category` | `식비` `배달` `카페/간식` `교통/택시` `쇼핑/패션` `뷰티` `취미/여가` `술/유흥` `구독` `생활` `기타` 중 하나 |
+| `item` | 앞뒤 공백 제거 뒤 1~30자 |
+| `reason` | 선택. 앞뒤 공백 제거 뒤 200자 이하, 비면 `null` |
+| `roomIds` | 1개 이상. 요청자가 멤버인 방만 |
+
+**Response `201`**
+```json
+{
+  "submissionId": "0f5c8a52-6a0e-4a8e-9a47-1c3f2d7e8b10",
+  "status": "NEEDS_INPUT",
+  "revision": "3b1f…(sha256 hex)",
+  "intakeResult": {
+    "schemaVersion": 1,
+    "mode": "INITIAL",
+    "status": "NEEDS_CLARIFICATION",
+    "itemReview": { "status": "VAGUE", "suggestedItem": "커피 한 잔" },
+    "message": "무엇을 샀는지 조금 더 알려주세요",
+    "categoryReview": { "status": "OK", "suggestedCategory": null, "confidence": 0.9 },
+    "injectionDetected": false,
+    "intakeSource": "AI"
+  },
+  "postId": null
+}
+```
+
+- `status`: `COMPLETED` \| `NEEDS_INPUT` \| `BLOCKED`. `COMPLETED`면 `postId`가 채워진다
+- `revision`: 다음 `complete` 요청에 그대로 보낸다
+- `intakeResult`: 심문관 결과. 질문 문구는 `message`, 제안은 `itemReview.suggestedItem`·`categoryReview.suggestedCategory`
+
+### `POST /api/post-submissions/{submissionId}/complete`
+
+질문(`NEEDS_INPUT`)이나 차단(`BLOCKED`) 뒤에 부른다.
+
+**Request**
+```json
+{
+  "action": "REVISE",
+  "revision": "3b1f…(직전 응답의 revision)",
+  "postType": "spent",
+  "amountKrw": 4800,
+  "category": "카페/간식",
+  "item": "스타벅스 아이스 아메리카노",
+  "reason": "야근해서",
+  "roomIds": ["6a1f0c2e-3b7d-4c55-9d7e-2f1b8c0a9e41"]
+}
+```
+
+- `action`: `REVISE`(고친 값으로 한 번 더 검토) \| `PROCEED`(질문을 보고 그대로 등록)
+- 최종 값 전체를 보낸다. 검증 규칙은 위 표와 같다. `PROCEED`는 직전에 검토한 값과 같아야 한다
+
+**Response `200`** — 위와 같은 형식. `REVISE`의 `intakeResult.mode`는 `FINAL_CHECK`
+
+- 이미 등록된 제출에 다시 보내면 `action`과 상관없이 기존 `postId`로 `COMPLETED`를 돌려준다(게시물은 하나)
+
+### 오류
+
+| 상황 | 상태 코드 | 바디 |
+|---|---|---|
+| 입력 규칙 위반(`item` 길이, `reason` 길이, `amountKrw`, `category`, 빈 `roomIds`, `action` 없음) | 400 | `{ "message": "..." }` |
+| `postType`·`action` 값이 enum 밖이거나 JSON 이 깨짐 | 400 | Spring 기본 에러 형식 |
+| 요청자가 멤버가 아닌 방이 `roomIds`에 있음 | 403 | Spring 기본 에러 형식 |
+| 없는 제출이거나 남의 제출 | 404 | Spring 기본 에러 형식 |
+| `revision`이 현재 값과 다름 | 409 | `{ "message": "제출 내용이 바뀌었습니다. 다시 불러와 주세요." }` |
+| `BLOCKED`를 `PROCEED` | 409 | `{ "message": "차단된 제출은 그대로 등록할 수 없습니다." }` |
+| `PROCEED`인데 값이 검토한 값과 다름 | 409 | `{ "message": "검토한 값과 다릅니다. 고친 값은 REVISE 로 보내 주세요." }` |
+| 이미 한 번 `REVISE`함 | 409 | `{ "message": "이미 한 번 고쳤습니다." }` |
+| 지금 상태에서 할 수 없는 동작 | 409 | `{ "message": "지금은 완료할 수 없는 제출입니다." }` 또는 `"지금은 고칠 수 없는 제출입니다."` |
