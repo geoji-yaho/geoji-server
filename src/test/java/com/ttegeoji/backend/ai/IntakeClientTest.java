@@ -13,6 +13,9 @@ import com.ttegeoji.backend.domain.enums.PostType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -28,6 +31,7 @@ import java.net.ConnectException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -167,6 +171,55 @@ class IntakeClientTest {
                     assertThat(e.getStatus()).isEqualTo(422);
                     assertThat(e.getCode()).isEqualTo("ITEM_LENGTH");
                 });
+    }
+
+    private static final String UNAUTHORIZED_BODY = "{\"code\":\"UNAUTHORIZED\",\"hint\":\"raw-body-marker\"}";
+
+    @Test
+    @DisplayName("10 §4.7 401 {\"code\":\"UNAUTHORIZED\"} → 예외 없이 FALLBACK")
+    void unauthorizedFallsBack() {
+        server.expect(requestTo(BASE + IntakeClient.PATH))
+                .andRespond(withStatus(HttpStatus.UNAUTHORIZED)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(UNAUTHORIZED_BODY));
+
+        assertThat(client.call(request(Mode.INITIAL))).isEqualTo(IntakeResult.fallback(Mode.INITIAL));
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("10 §4.7 403 → 예외 없이 FALLBACK")
+    void forbiddenFallsBack() {
+        server.expect(requestTo(BASE + IntakeClient.PATH))
+                .andRespond(withStatus(HttpStatus.FORBIDDEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"code\":\"FORBIDDEN\"}"));
+
+        assertThat(client.call(request(Mode.FINAL_CHECK))).isEqualTo(IntakeResult.fallback(Mode.FINAL_CHECK));
+        server.verify();
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    @DisplayName("10 §4.7 401 → ERROR 로그 1줄에 상태 코드·code 만, 토큰·요청 본문·응답 본문 원문 없음")
+    void unauthorizedLogsStatusAndCodeOnly(CapturedOutput output) {
+        server.expect(requestTo(BASE + IntakeClient.PATH))
+                .andRespond(withStatus(HttpStatus.UNAUTHORIZED)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(UNAUTHORIZED_BODY));
+
+        client.call(request(Mode.INITIAL));
+
+        List<String> errorLines = output.getOut().lines()
+                .filter(line -> line.contains("ERROR") && line.contains("intake")).toList();
+        assertThat(errorLines).hasSize(1);
+        assertThat(errorLines.getFirst()).contains("401").contains("UNAUTHORIZED");
+        assertThat(output.getAll())
+                .doesNotContain(TOKEN)
+                .doesNotContain("아이스 아메리카노")
+                .doesNotContain("hash-1")
+                .doesNotContain("raw-body-marker")
+                .doesNotContain(UNAUTHORIZED_BODY);
     }
 
     @Test

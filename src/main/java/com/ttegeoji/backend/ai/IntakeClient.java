@@ -26,7 +26,8 @@ import java.util.Map;
 /**
  * 백엔드 → AI API 심문관 호출(10 §4). 정본 모양은 AI 저장소 contracts/intake-v1.schema.json.
  * 연결 실패·timeout·5xx·키 없음은 등록을 막지 않고 FALLBACK 결과를 돌려준다(AI API 의 200 FALLBACK 행과 같은 값).
- * 4xx 는 본문 최상위 {"code"} 를 읽어 {@link RejectedException} 으로 던진다(10 §4.7).
+ * 401·403(서비스 인증 거부)도 FALLBACK 으로 돌려주고 상태 코드와 응답 code 만 ERROR 로그에 남긴다(사용자 9/15).
+ * 그 밖 4xx 는 본문 최상위 {"code"} 를 읽어 {@link RejectedException} 으로 던진다(10 §4.7).
  * DB 트랜잭션 안에서 부르지 않는다(10 §2). 로그에 토큰·사유 원문을 남기지 않는다.
  */
 @Slf4j
@@ -103,6 +104,11 @@ public class IntakeClient {
                 log.warn("intake 응답이 계약과 다름 → FALLBACK");
                 return IntakeResult.fallback(mode);
             }
+        }
+        if (status == 401 || status == 403) {
+            // 서비스 토큰 불일치는 사용자 입력 탓이 아니라 등록을 막지 않는다(사용자 9/15). 운영자가 알아채도록 ERROR
+            log.error("intake HTTP {} code={} → FALLBACK(서비스 인증 거부)", status, codeOf(status, text));
+            return IntakeResult.fallback(mode);
         }
         if (status >= 400 && status < 500) {
             throw new RejectedException(status, codeOf(status, text));
