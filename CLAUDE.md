@@ -29,7 +29,8 @@
 | 워커가 기대하는 백엔드 동작 | AI 저장소 `tests/fakes/backend_app.py`(가짜 백엔드) | 없음. 10 과 다르면 10 이 이긴다 |
 | 프론트 enum | `geoji-web/src/shared/domain/*.ts` | Java enum 이 소문자로 맞춘다 |
 | 공개 API | 이 저장소 `API.md` | — |
-| 업무 테이블 DDL | `supabase/migrations/`(이 저장소에 없음, 10 §15.1) | 엔티티는 `ddl-auto: validate` 로만 대조 |
+| 재판 규칙(정족수·동률·양형 밴드·마감) | `geoji-web/docs/product/SPEC.md` | 요약은 `domain-vocabulary` 룰 |
+| 업무 테이블 DDL | `supabase/migrations/`(이 저장소에 없음, 10 §15.1) | 004 초안은 `src/test/resources/db/004_verdict_generation.sql`. 머지 뒤 사용자가 옮긴다 |
 
 10 과 코드가 어긋나면 10 을 따르고 어긋남을 보고한다. 10 과 가짜 백엔드가 어긋나면 10 이 이긴다.
 

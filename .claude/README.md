@@ -35,9 +35,9 @@ CLAUDE.md              늘 지켜야 하는 것. 세션마다 로드
 | ---------------------- | -------------------------------------------------------- | ---------------------------------------------------- |
 | `git-workflow.md`      | 브랜치, 커밋 메시지 형식, git add 하지 않는 것            | 없음. 늘 로드                                        |
 | `backend-contract.md`  | 10 사본을 읽는 법, 고치지 않는 이유, 어긋남·회신·반영을 보고하는 법, `API.md` 갱신 | 없음. 늘 로드 |
-| `domain-vocabulary.md` | 서비스 용어, enum 표준, 대문자 식별자, 계약 이름과 서버 테이블의 어긋남 | `docs/**`, `src/**`, `API.md` |
-| `code-layout.md`       | Spring Boot 4.1·Java 25, 패키지 배치, 스키마 소유, 내부 API 규약, 잠금 순서 | `src/**`, `build.gradle`, `settings.gradle` |
-| `testing.md`           | Gradle 게이트, 테스트 DB 미정, AI API·벤더 격리, 수용 검사 | `src/test/**`, `build.gradle` |
+| `domain-vocabulary.md` | 서비스 용어, enum 표준, 대문자 식별자, 10 이름대로 신규 테이블(9/14), 재판 규칙 | `docs/**`, `src/**`, `API.md` |
+| `code-layout.md`       | Spring Boot 4.1·Java 25, 승인된 패키지 배치, 004 초안 위치, 내부 API 규약·환경변수, 잠금 순서 | `src/**`, `build.gradle`, `settings.gradle` |
+| `testing.md`           | Gradle 게이트, Testcontainers 테스트 DB, AI API·벤더 격리, 수용 검사 | `src/test/**`, `build.gradle` |
 | `orca-worker.md`       | orca 워커 세션의 불변 규칙. 질문은 `ask`, 공유 자원, 편집 범위 | 없음. 늘 로드. preamble 없는 세션은 무시 |
 
 ## 스킬
