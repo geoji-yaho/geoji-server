@@ -35,4 +35,4 @@ orca 코디네이터가 워크트리에 띄운 워커 세션에만 적용된다.
 - main 에 커밋하지 않는다. 훅이 막는다. main 머지가 배포이므로 더더욱
 - 마무리 순서. 게이트 통과 → `git add <경로>`(경로를 지정한다. `-A` 금지) → 커밋(형식은 위와 같다. 제목에 10 절. `feat(jobs): 10 §3 SENTENCE job INSERT·D-24 게이트`) → `git fetch origin main && git rebase origin/main` → 충돌이면 풀지 말고 preamble 의 `ask` → `git push -u origin HEAD` → `gh pr create --base main --title "<커밋 제목>" --body-file _workspace/04_report.md`
 - PR 본문 끝에 `🤖 Generated with [Claude Code](https://claude.com/claude-code)`와 세션 URL 을 붙인다
-- 머지하지 않는다. PR URL 을 `worker_done` body 에 넣는다. 머지는 사용자가 한다
+- 워커는 머지하지 않는다. PR URL 을 `worker_done` body 에 넣는다. 승인·머지·워크트리 정리는 코디네이터가 한다(`/orca-plan` 9~11, 9/15 사용자 지시)
