@@ -76,6 +76,15 @@ class VerdictReadGuardTest extends PostgresContainerSupport {
         // 삭제 뒤 epoch(2)와 같은 snapshot 이어도 차단
         assertThat(guard.decide(post, snapshot(2, 0, 0))).isEqualTo(Decision.BLOCKED);
         assertThat(guard.decide(post, snapshot(1, 0, 0))).isEqualTo(Decision.BLOCKED);
+        assertThat(guard.decide(post, null)).isEqualTo(Decision.BLOCKED);
+    }
+
+    @Test
+    @DisplayName("10 §8 snapshot NULL(템플릿 저장 행) → epoch 가 바뀌어도 원문 허용")
+    void templateRowWithoutSnapshotAllowed() {
+        service.withdrawRoomShare(post, room);
+
+        assertThat(guard.decide(post, null)).isEqualTo(Decision.ORIGINAL);
     }
 
     private String snapshot(long postEpoch, long roomEpoch, long userEpoch) {

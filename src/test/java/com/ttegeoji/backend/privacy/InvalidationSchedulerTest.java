@@ -1,10 +1,10 @@
 package com.ttegeoji.backend.privacy;
 
-import com.ttegeoji.backend.privacy.InvalidationQueries.AffectedVerdictText;
 import com.ttegeoji.backend.privacy.InvalidationServiceTest.AiCase;
 import com.ttegeoji.backend.privacy.InvalidationServiceTest.Fixtures;
-import com.ttegeoji.backend.domain.enums.SpiceLevel;
 import com.ttegeoji.backend.support.PostgresContainerSupport;
+import com.ttegeoji.backend.util.Json;
+import com.ttegeoji.backend.verdict.TemplateCatalog;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -53,6 +53,8 @@ class InvalidationSchedulerTest extends PostgresContainerSupport {
     private JdbcTemplate jdbc;
     @Autowired
     private TransactionTemplate tx;
+    @Autowired
+    private TemplateCatalog templateCatalog;
 
     private Fixtures f;
 
@@ -122,18 +124,22 @@ class InvalidationSchedulerTest extends PostgresContainerSupport {
     }
 
     @Test
-    @DisplayName("10 §8 4문단 영향 verdict_texts 조회 — 무효 evidence 를 현재 text_version 으로 인용한 강도만, 형량 FINAL 유지")
-    void findsAffectedVerdictTexts() {
+    @DisplayName("10 §8 4문단 무효 evidence 를 현재 text_version 으로 인용한 강도만 TEMPLATE 전환, 형량 FINAL·양형 이유 유지, 재실행 멱등")
+    void convertsAffectedTextsToTemplate() {
         UUID author = f.profile();
         UUID post = f.post(author);
         UUID otherPost = f.post(author);
         UUID verdict = f.verdict(post);
         UUID otherVerdict = f.verdict(otherPost);
+        jdbc.update("UPDATE verdicts SET sentencing_reason = 'AI 양형 이유', reason_source = 'AI' WHERE id = ?", verdict);
         AiCase target = f.aiCase(post.toString(), ScopeKeys.post(post));
         AiCase other = f.aiCase(otherPost.toString(), ScopeKeys.post(otherPost));
         f.verdictText(verdict, "mild", 2);
         f.verdictText(verdict, "spicy", 2);
         f.verdictText(otherVerdict, "mild", 2);
+        jdbc.update("""
+                UPDATE verdict_texts SET dossier_id = ?, privacy_epoch_snapshot = '[{"scope_key": "x", "epoch": 1}]'::jsonb
+                 WHERE verdict_id = ?""", target.dossier(), verdict);
         f.ref(verdict, 2, "mild", target.evidence());
         // 옛 text_version 의 인용은 현재 문구와 무관하다
         f.ref(verdict, 1, "spicy", target.evidence());
@@ -144,17 +150,40 @@ class InvalidationSchedulerTest extends PostgresContainerSupport {
 
         processUntilDone(id);
 
-        List<AffectedVerdictText> affected = queries.findAffectedVerdictTexts("POST", post.toString());
-        assertThat(affected).singleElement().satisfies(a -> {
-            assertThat(a.verdictId()).isEqualTo(verdict);
-            assertThat(a.intensity()).isEqualTo(SpiceLevel.mild);
-            assertThat(a.textVersion()).isEqualTo(2L);
-        });
-        assertThat(queries.findAffectedVerdictTexts("POST", otherPost.toString())).isEmpty();
-        assertThat(jdbc.queryForMap("SELECT sentence::text AS sentence, sentence_status, sentence_source FROM verdicts WHERE id = ?", verdict))
+        TemplateCatalog.Rendered rendered = templateCatalog.render("guilty", 0, 0, "oneDay");
+        Map<String, Object> mild = f.verdictTextRow(verdict, "mild");
+        assertThat(mild)
+                .containsEntry("source", "TEMPLATE")
+                .containsEntry("headline", rendered.headline())
+                .containsEntry("text_version", 3L)
+                .containsEntry("dossier_id", null)
+                .containsEntry("privacy_epoch_snapshot", null);
+        assertThat(Json.read((String) mild.get("statement"))).isEqualTo(rendered.statement().stream()
+                .map(text -> Map.of("text", text, "kind", "opinion", "evidence_labels", List.of())).toList());
+        assertThat(f.verdictTextRow(verdict, "spicy"))
+                .containsEntry("source", "AI").containsEntry("headline", "AI 헤드라인").containsEntry("text_version", 2L);
+        assertThat(f.verdictTextRow(otherVerdict, "mild")).containsEntry("source", "AI").containsEntry("text_version", 2L);
+        assertThat(jdbc.queryForMap("""
+                SELECT sentence::text AS sentence, sentence_status, sentence_source, sentencing_reason, reason_source,
+                       text_version, text_status, retry_round, pending_retry_at FROM verdicts WHERE id = ?""", verdict))
                 .containsEntry("sentence", "oneDay")
                 .containsEntry("sentence_status", "FINAL")
-                .containsEntry("sentence_source", "RULE");
+                .containsEntry("sentence_source", "RULE")
+                .containsEntry("sentencing_reason", "AI 양형 이유")
+                .containsEntry("reason_source", "AI")
+                .containsEntry("text_version", 3L)
+                .containsEntry("text_status", "TEMPLATE_READY")
+                .containsEntry("retry_round", 0)
+                .containsEntry("pending_retry_at", null);
+        assertThat(jdbc.queryForMap("SELECT text_version, text_status FROM verdicts WHERE id = ?", otherVerdict))
+                .containsEntry("text_version", 2L).containsEntry("text_status", "AI_READY");
+        assertThat(queries.findAffectedVerdictTexts("POST", post.toString())).as("전환 뒤에는 다시 잡히지 않음").isEmpty();
+
+        jdbc.update("UPDATE privacy_invalidations SET status = 'PENDING', processed_at = NULL WHERE id = ?", id);
+        processUntilDone(id);
+
+        assertThat(f.verdictTextRow(verdict, "mild")).isEqualTo(mild);
+        assertThat(jdbc.queryForObject("SELECT text_version FROM verdicts WHERE id = ?", Long.class, verdict)).isEqualTo(3L);
     }
 
     @Test
@@ -294,22 +323,30 @@ class InvalidationSchedulerTest extends PostgresContainerSupport {
     }
 
     @Test
-    @DisplayName("10 §1 invalidate_scope.sql·영향 조회·작업 행 잠금을 SET LOCAL ROLE backend 로 실행해도 권한 오류 없음")
+    @DisplayName("10 §1 invalidate_scope.sql·템플릿 전환·작업 행 잠금·상태 갱신을 SET LOCAL ROLE backend 로 실행해도 권한 오류 없음")
     void runsAsBackendRole() {
-        String post = UUID.randomUUID().toString();
+        UUID author = f.profile();
+        UUID postId = f.post(author);
+        UUID verdict = f.verdict(postId);
+        String post = postId.toString();
         AiCase c = f.aiCase(post, "post:" + post);
+        f.verdictText(verdict, "mild", 2);
+        f.ref(verdict, 2, "mild", c.evidence());
         long id = f.pendingInvalidation("post:other-" + post, "POST", "other-" + post);
 
         tx.executeWithoutResult(s -> {
             jdbc.execute("SET LOCAL ROLE backend");
-            queries.runInvalidateScope("POST", post, "post:" + post);
-            queries.findAffectedVerdictTexts("POST", post);
             queries.lockPending(id);
             queries.claimPendingIds(1);
+            queries.runInvalidateScope("POST", post, "post:" + post);
+            scheduler.convertAffectedTextsToTemplate(new InvalidationQueries.PendingInvalidation(id, "post:" + post, "POST", post, 0));
+            queries.recordFailure(id, "x", InvalidationScheduler.MAX_ATTEMPTS);
+            queries.markDone(id);
         });
 
         assertThat(f.aiState(c).get("evidence")).isNotNull();
         assertThat(f.aiState(c).get("node_result")).isNotNull();
+        assertThat(f.verdictTextRow(verdict, "mild")).containsEntry("source", "TEMPLATE");
     }
 
     private void processUntilDone(long id) {

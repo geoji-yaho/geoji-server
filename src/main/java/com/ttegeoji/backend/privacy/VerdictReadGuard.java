@@ -37,8 +37,8 @@ public class VerdictReadGuard {
             return Decision.BLOCKED;
         }
         if (privacyEpochSnapshotJson == null) {
-            // TODO 게이트 A 답 대기: snapshot NULL(템플릿 저장 행·finalize 가 안 채운 행) 판정이 10 에 없다
-            throw new UnsupportedOperationException("privacy_epoch_snapshot NULL 판정은 미결입니다.");
+            // 템플릿 저장 행(폴백·무효화 전환). 근거를 인용하지 않아 새로 드러낼 정보가 없다(사용자 9/15)
+            return Decision.ORIGINAL;
         }
         Map<String, Long> saved = parseSnapshot(privacyEpochSnapshotJson);
         Map<String, Long> current = epochs.read(saved.keySet());

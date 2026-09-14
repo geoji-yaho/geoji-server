@@ -65,6 +65,22 @@ class InvalidationServiceTest extends PostgresContainerSupport {
     }
 
     @Test
+    @DisplayName("10 §8 이미 삭제된 게시물을 작성자가 다시 삭제 → 성공, epoch·기록 추가 없음")
+    void redeleteIsNoop() {
+        UUID author = f.profile();
+        UUID post = f.post(author);
+        String key = ScopeKeys.post(post);
+        service.deletePost(post, author);
+        Object deletedAt = jdbc.queryForObject("SELECT deleted_at FROM posts WHERE id = ?", Object.class, post);
+
+        service.deletePost(post, author);
+
+        assertThat(f.epoch(key)).isEqualTo(1L);
+        assertThat(f.invalidations(key)).hasSize(1);
+        assertThat(jdbc.queryForObject("SELECT deleted_at FROM posts WHERE id = ?", Object.class, post)).isEqualTo(deletedAt);
+    }
+
+    @Test
     @DisplayName("10 §8 D-26 삭제 → 그 post 의 QUEUED·RUNNING PREPARE·SENTENCE·TEXT_RETRY CANCELLED, 세 컬럼 NULL")
     void deleteCancelsActiveJobs() {
         UUID author = f.profile();
@@ -392,6 +408,13 @@ class InvalidationServiceTest extends PostgresContainerSupport {
             jdbc.update("""
                     INSERT INTO verdict_texts (verdict_id, intensity, headline, statement, source, text_version)
                     VALUES (?, CAST(? AS spice_level), 'AI 헤드라인', '[]'::jsonb, 'AI', ?)""", verdict, intensity, textVersion);
+        }
+
+        Map<String, Object> verdictTextRow(UUID verdict, String intensity) {
+            return jdbc.queryForMap("""
+                    SELECT headline, statement::text AS statement, source, text_version, dossier_id,
+                           privacy_epoch_snapshot::text AS privacy_epoch_snapshot
+                      FROM verdict_texts WHERE verdict_id = ? AND intensity = CAST(? AS spice_level)""", verdict, intensity);
         }
 
         void ref(UUID verdict, long textVersion, String intensity, UUID evidence) {

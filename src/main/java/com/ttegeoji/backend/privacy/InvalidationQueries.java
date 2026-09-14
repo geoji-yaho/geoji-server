@@ -137,6 +137,38 @@ public class InvalidationQueries {
                 sourceType, sourceId);
     }
 
+    /** 템플릿 전환에 필요한 verdict 값. sentence 는 무죄 계열이면 null */
+    public record VerdictForTemplate(UUID id, UUID postId, String juryResult, String sentence, long textVersion) {
+    }
+
+    /** id 오름차순으로 verdict 행을 잠근다(10 §2 verdict 단계) */
+    public List<VerdictForTemplate> lockVerdictsForTemplate(List<UUID> verdictIds) {
+        return jdbc.query("""
+                SELECT id, post_id, jury_result::text AS jury_result, sentence::text AS sentence, text_version
+                  FROM verdicts
+                 WHERE id = ANY(?)
+                 ORDER BY id
+                   FOR UPDATE""",
+                (rs, i) -> new VerdictForTemplate(rs.getObject("id", UUID.class), rs.getObject("post_id", UUID.class),
+                        rs.getString("jury_result"), rs.getString("sentence"), rs.getLong("text_version")),
+                (Object) verdictIds.toArray(UUID[]::new));
+    }
+
+    /** 인용한 강도 행만 템플릿 문구로. 저장 당시 dossier·epoch 스냅샷은 없앤다(VerdictFallbackService 와 같다) */
+    public void replaceTextWithTemplate(UUID verdictTextId, String headline, String statementJson, long textVersion) {
+        jdbc.update("""
+                UPDATE verdict_texts
+                   SET headline = ?, statement = CAST(? AS jsonb), source = 'TEMPLATE', text_version = ?,
+                       dossier_id = NULL, privacy_epoch_snapshot = NULL
+                 WHERE id = ?""", headline, statementJson, textVersion, verdictTextId);
+    }
+
+    /** 형량(sentence·sentencing_reason·reason_source)은 건드리지 않는다 */
+    public void markVerdictTemplateReady(UUID verdictId, long textVersion) {
+        jdbc.update("UPDATE verdicts SET text_version = ?, text_status = 'TEMPLATE_READY' WHERE id = ?",
+                textVersion, verdictId);
+    }
+
     public void markDone(long id) {
         jdbc.update("UPDATE privacy_invalidations SET status = 'DONE', processed_at = now() WHERE id = ?", id);
     }

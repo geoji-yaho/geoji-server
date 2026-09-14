@@ -34,6 +34,10 @@ public class InvalidationService {
         if (!queries.isPostAuthor(postId, actorId)) {
             throw new IllegalStateException("본인 게시물만 삭제할 수 있습니다.");
         }
+        // 이미 삭제됐으면 epoch·기록을 더 올리지 않고 성공(사용자 9/15)
+        if (queries.isPostDeleted(postId)) {
+            return;
+        }
         // source 조합은 AI 통합 테스트(test_deletion.py)가 쓰는 ('POST', post_id, 'post:{id}')
         invalidate(List.of(ScopeKeys.post(postId)), POST_SOURCE_TYPE, postId.toString(), () -> {
             queries.markPostDeleted(postId);
@@ -75,7 +79,7 @@ public class InvalidationService {
         jobQueries.cancelActiveForPost(postId.toString(), queries.findVerdictIds(postId));
     }
 
-    // TODO 게이트 A 답 대기: 공유 철회 기록의 source_type·source_id 는 10·AI 코드에 없다. 임시로 게시물 삭제와 같은 ('POST', post_id)
+    // 게시물 삭제와 같은 ('POST', post_id). 철회도 그 게시물 파생 전부를 무효화한다(AI test_deletion.py 선례, 사용자 9/15)
     static SourceRef roomShareSource(UUID postId, UUID roomId) {
         return new SourceRef(POST_SOURCE_TYPE, postId.toString());
     }
