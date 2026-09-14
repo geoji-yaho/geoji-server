@@ -15,7 +15,7 @@ public record TrialResponse(
         long guiltyVotes, long notGuiltyVotes, VerdictType myVote, List<VoteResponse> votes
 ) {
     public static TrialResponse from(ExpenseTrial trial, List<ExpenseVote> votes, UUID currentUserId) {
-        long guilty = votes.stream().filter(v -> v.getVerdict() == VerdictType.GUILTY).count();
+        long guilty = votes.stream().filter(v -> v.getVerdict() == VerdictType.guilty).count();
         long notGuilty = votes.size() - guilty;
         VerdictType myVote = votes.stream()
                 .filter(v -> v.getVoterUserId().equals(currentUserId))

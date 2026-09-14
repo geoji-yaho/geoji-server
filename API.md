@@ -91,7 +91,7 @@ Supabase Auth 가입만으로는 `profiles`에 행이 생기지 않는다. **로
 ```json
 {
   "name": "야근족 거지방",
-  "spiceLevel": "SPICY",
+  "spiceLevel": "spicy",
   "voteDeadlineMinutes": 720,
   "rules": ["배달 24,000원? 밥이 있으면 라면으로 드셔야죠."]
 }
@@ -100,7 +100,7 @@ Supabase Auth 가입만으로는 `profiles`에 행이 생기지 않는다. **로
 | 필드 | 타입 | 필수 | 제약 |
 |---|---|---|---|
 | `name` | string | O | 1~20자 |
-| `spiceLevel` | enum | O | `MILD`(순한맛) \| `SPICY`(매운맛) \| `HELL`(지옥맛) — AI팀 backend-contract.md D-21 표기에 맞춤 |
+| `spiceLevel` | enum | O | `mild`(순한맛) \| `spicy`(매운맛) \| `hell`(지옥맛) — AI팀 backend-contract.md §15.2 D-21 확정(프론트 값이 표준) |
 | `voteDeadlineMinutes` | int | O | `30` \| `60` \| `180` \| `360` \| `720` |
 | `rules` | string[] | X | 최대 10개 (서버는 검증 안 함, DB 제약도 없음 — 클라이언트 책임) |
 
@@ -109,7 +109,7 @@ Supabase Auth 가입만으로는 `profiles`에 행이 생기지 않는다. **로
 {
   "id": "b3f1...",
   "name": "야근족 거지방",
-  "spiceLevel": "SPICY",
+  "spiceLevel": "spicy",
   "voteDeadlineMinutes": 720,
   "rules": ["배달 24,000원? 밥이 있으면 라면으로 드셔야죠."],
   "inviteCode": "a1b2c3d4",
@@ -546,9 +546,9 @@ AI 팀 API가 나오면 `AiClient.judge(...)` 구현만 교체하면 된다.
   "judgedAt": null,
   "guiltyVotes": 3,
   "notGuiltyVotes": 1,
-  "myVote": "GUILTY",
+  "myVote": "guilty",
   "votes": [
-    { "id": "v1...", "voterUserId": "6db45245-5518-40e8-92dc-7e8daf8e65fc", "verdict": "GUILTY", "reason": "밥이 없으면 라면을 드셨어야죠.", "createdAt": "2026-09-06T15:10:00+09:00" }
+    { "id": "v1...", "voterUserId": "6db45245-5518-40e8-92dc-7e8daf8e65fc", "verdict": "guilty", "reason": "밥이 없으면 라면을 드셨어야죠.", "createdAt": "2026-09-06T15:10:00+09:00" }
   ]
 }
 ```
@@ -564,11 +564,11 @@ AI 팀 API가 나오면 `AiClient.judge(...)` 구현만 교체하면 된다.
 
 **Request**
 ```json
-{ "verdict": "GUILTY", "reason": "밥이 없으면 라면을 드셨어야죠." }
+{ "verdict": "guilty", "reason": "밥이 없으면 라면을 드셨어야죠." }
 ```
-`verdict`: `GUILTY` \| `NOT_GUILTY`, `reason`은 1~500자 필수. (`APPROVED`/`REJECTED`는
-"살까 말까" 구매 동의/기각용으로 DB enum에는 있지만 이 엔드포인트는 아직 안 받는다 —
-지출 재판은 `GUILTY`/`NOT_GUILTY`만 유효)
+`verdict`: `guilty` \| `notGuilty`, `reason`은 1~500자 필수. (`agree`/`disagree`/`dismissed`는
+"살까 말까" 구매 동의/기각·정족수 미달 각하용으로 DB enum에는 있지만 이 엔드포인트는 아직
+안 받는다 — 지출 재판은 `guilty`/`notGuilty`만 유효)
 
 **Response `201`** — 갱신된 재판 현황 (위 `GET .../trial`과 같은 형식)
 **Response `400`** — 존재하지 않는 지출
