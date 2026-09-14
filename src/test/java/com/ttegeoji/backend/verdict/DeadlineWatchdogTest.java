@@ -240,6 +240,15 @@ class DeadlineWatchdogTest extends PostgresContainerSupport {
     @DisplayName("10 §6 D-24 deadline_at NULL(SENTENCE 보류) 은 대상 아님")
     void heldSentenceNotTarget() {
         VerdictFallbackServiceTest.Seed.Case c = seed.pendingVerdict("guilty", 2, 1, "NULL");
+        // 실제 D-24 보류 상태를 만든다. PREPARE 가 없으면 백그라운드 JuryScheduler 게이트가 곧바로 SENTENCE 를 넣어
+        // deadline_at 을 채운다(경합). confirmed_at = now() 라 30초 대기 안에서는 게이트도 보류한다
+        UUID prepareId = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO ai.jobs (id, event_id, event_type, kind, dedupe_key, aggregate_id, aggregate_version,
+                                     payload, status, priority, attempts, max_attempts, trace_id)
+                VALUES (?, gen_random_uuid(), 'test.event', 'PREPARE', ?, ?, 1,
+                        CAST(? AS jsonb), 'QUEUED', 10, 0, 2, 'trace')""",
+                prepareId, "test:" + prepareId, c.postId().toString(), "{\"post_id\": \"" + c.postId() + "\"}");
 
         assertThat(schedulerQueries.overduePendingVerdicts())
                 .noneMatch(v -> v.verdictId().equals(c.verdictId()));
@@ -250,6 +259,7 @@ class DeadlineWatchdogTest extends PostgresContainerSupport {
         assertThat(verdict.get("sentence_status")).isEqualTo("PENDING");
         assertThat(verdict.get("deadline_at")).isNull();
         assertThat(seed.retainCount(c.verdictId())).isZero();
+        seed.finishJobs(prepareId);
     }
 
     @Test
