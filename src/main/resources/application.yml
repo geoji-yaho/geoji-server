@@ -25,6 +25,15 @@ spring:
 server:
   port: ${PORT:8080}
 
+geoji:
+  internal:
+    # 워커 ↔ 백엔드 양방향 같은 값(10 §4.7). 비어 있으면 내부 API 는 전부 401
+    service-token: ${SERVICE_AUTH_TOKEN:}
+  ai:
+    base-url: ${AI_API_BASE_URL:}
+  # finalize 의 guardrail_policy_version 비교값(10 §5·§16.1)
+  guardrail-policy-version: ${GUARDRAIL_POLICY_VERSION:}
+
 logging:
   level:
     org.hibernate.SQL: debug

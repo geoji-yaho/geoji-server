@@ -1,0 +1,19 @@
+# 테스트 프로필. datasource 는 PostgresContainerSupport(Testcontainers)가 넣는다. 공유 Supabase 에 붙지 않는다.
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # 운영 Supabase issuer 로 메타데이터를 받으러 나가지 않게 로컬 주소로 덮는다
+          issuer-uri: http://localhost:0/auth/v1
+
+geoji:
+  internal:
+    service-token: test-token
+  ai:
+    # 실제 AI API 를 부르지 않는다. 호출 테스트는 MockRestServiceServer 로 바꾼다
+    base-url: http://localhost:0
+  guardrail-policy-version: guardrail-v2
