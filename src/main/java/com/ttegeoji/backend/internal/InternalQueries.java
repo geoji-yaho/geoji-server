@@ -98,12 +98,12 @@ public class InternalQueries {
 
     /** 게시물이 공유된 방. 만든 순서(같으면 id)로 정렬한다. */
     public List<RoomRow> findSharedRooms(UUID postId) {
-        // feat-privacy 의 post_rooms.revoked_at 이 머지되면 AND pr.revoked_at IS NULL 을 더한다(스펙: 컬럼이 없으면 조건 없이)
+        // 철회된 공유는 행을 남기고 revoked_at 으로 표시한다(feat-privacy 004b). 사건 방·후보 scope 가 모두 이 쿼리를 쓴다
         return jdbcTemplate.query("""
                 SELECT r.id, r.spice_level::text AS spice_level, r.rule_version, r.rules, r.created_at
                   FROM post_rooms pr
                   JOIN rooms r ON r.id = pr.room_id
-                 WHERE pr.post_id = ?
+                 WHERE pr.post_id = ? AND pr.revoked_at IS NULL
                  ORDER BY r.created_at, r.id
                 """, ROOM_ROW, postId);
     }

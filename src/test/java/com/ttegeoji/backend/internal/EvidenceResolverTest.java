@@ -324,6 +324,26 @@ class EvidenceResolverTest extends PostgresContainerSupport {
     }
 
     @Test
+    @DisplayName("10 §4.2·§8 철회된 공유 방(post_rooms.revoked_at)은 사건 방·후보 scope 모두에서 빠진다")
+    void revokedShareExcluded() {
+        UUID candidate = sharedPost(author, "2026-09-10 12:00:00+09", roomA);
+        fx.share(casePost, roomB);
+        jdbcTemplate.update("UPDATE post_rooms SET revoked_at = now() WHERE post_id = ? AND room_id = ?", casePost,
+                roomB);
+
+        JsonNode n = resolve(List.of(candidate("POST", candidate, 1, 0.5)), ALL);
+
+        assertThat(texts(n.get("room_rules"), "room_id")).containsOnly(roomA.toString());
+        // 사건 방이 A 하나로 줄어 A 에만 공유된 후보가 통과한다
+        assertThat(texts(n.get("sources"), "source_id")).containsExactly(candidate.toString());
+
+        jdbcTemplate.update("UPDATE post_rooms SET revoked_at = now() WHERE post_id = ? AND room_id = ?", candidate,
+                roomA);
+        JsonNode revokedCandidate = resolve(List.of(candidate("POST", candidate, 1, 0.5)), ALL);
+        assertThat(revokedCandidate.get("sources").isEmpty()).isTrue();
+    }
+
+    @Test
     @DisplayName("10 §4.1·§4.2 사건 게시물이 삭제됐으면 resolve 도 404 NOT_FOUND")
     void deletedCaseNotFound() {
         fx.deletePost(casePost);
