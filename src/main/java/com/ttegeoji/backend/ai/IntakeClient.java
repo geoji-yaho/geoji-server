@@ -198,7 +198,28 @@ public class IntakeClient {
                     IntakeSource.valueOf(text(node, "intake_source")));
         }
 
-        /** 공개 응답·submissions.intake_result 에 싣는 스키마 모양(snake_case). */
+        /** 공개 응답 intakeResult 모양. 키만 camelCase 이고 값은 toMap() 과 같다. */
+        public Map<String, Object> toResponseMap() {
+            Map<String, Object> itemMap = new LinkedHashMap<>();
+            itemMap.put("status", itemReview.status());
+            itemMap.put("suggestedItem", itemReview.suggestedItem());
+            Map<String, Object> categoryMap = new LinkedHashMap<>();
+            categoryMap.put("status", categoryReview.status());
+            categoryMap.put("suggestedCategory", categoryReview.suggestedCategory());
+            categoryMap.put("confidence", categoryReview.confidence());
+            Map<String, Object> map = new LinkedHashMap<>();
+            map.put("schemaVersion", 1);
+            map.put("mode", mode.name());
+            map.put("status", status.name());
+            map.put("itemReview", itemMap);
+            map.put("message", message);
+            map.put("categoryReview", categoryMap);
+            map.put("injectionDetected", injectionDetected);
+            map.put("intakeSource", intakeSource.name());
+            return map;
+        }
+
+        /** submissions.intake_result 에 저장하는 스키마 모양(intake-v1, snake_case). */
         public Map<String, Object> toMap() {
             Map<String, Object> itemMap = new LinkedHashMap<>();
             itemMap.put("status", itemReview.status());

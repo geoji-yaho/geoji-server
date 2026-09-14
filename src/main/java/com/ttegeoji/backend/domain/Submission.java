@@ -47,7 +47,8 @@ public class Submission {
     @Column(name = "post_id")
     private UUID postId;
 
-    @Column(name = "expires_at", nullable = false)
+    // 제출 만료는 아직 없다(9/15). NULL 로 둔다(004b_submissions.sql)
+    @Column(name = "expires_at")
     private OffsetDateTime expiresAt;
 
     // 마지막 IntakeResult. 직렬화된 JSON 문자열

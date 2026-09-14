@@ -598,13 +598,11 @@ MVP 데모용 "즉시 판결" — 5장 시상식 `/generate`와 같은 패턴. �
 한 번 보고(`PASS`·`NEEDS_CLARIFICATION`·`BLOCKED`), 질문이 나오면 사용자는 고치거나(`REVISE`) 그대로
 등록한다(`PROCEED`). 등록되면 게시물이 공유 방들에 올라가고 투표 마감이 정해진다.
 
-이 장의 요청·응답 필드는 **snake_case** 다(다른 장은 camelCase).
-
 **상태 기계**
 
 ```
 POST /api/post-submissions
-  ├─ PASS                 → COMPLETED (post_id)
+  ├─ PASS                 → COMPLETED (postId)
   ├─ NEEDS_CLARIFICATION  → NEEDS_INPUT ── complete PROCEED ───────────────→ COMPLETED
   │                                     └─ complete REVISE → FINAL_CHECK ─┬ PASS    → COMPLETED
   │                                                                       └ BLOCKED → BLOCKED
@@ -614,56 +612,56 @@ POST /api/post-submissions
 - 질문(`NEEDS_INPUT`)은 제출당 한 번만 나온다. `FINAL_CHECK`는 질문을 내지 않는다
 - `REVISE`는 제출당 한 번. `FINAL_CHECK`에서 `BLOCKED`가 나오면 더 고칠 수 없다
 - `BLOCKED`는 `PROCEED`로 등록할 수 없다(409)
-- AI API가 느리거나(5초) 꺼져 있어도 등록은 막히지 않는다. 이때 `intake_result.intake_source`는 `FALLBACK`,
+- AI API가 느리거나(5초) 꺼져 있어도 등록은 막히지 않는다. 이때 `intakeResult.intakeSource`는 `FALLBACK`,
   `status`는 `PASS`
-- 투표 마감 `vote_deadline_at` = 등록 시각 + 공유 방 `vote_deadline_minutes` 중 가장 짧은 값
+- 투표 마감(게시물 `voteDeadlineAt`) = 등록 시각 + 공유 방 투표 마감 분 중 가장 짧은 값
 
 ### `POST /api/post-submissions`
 
 **Request**
 ```json
 {
-  "post_type": "spent",
-  "amount_krw": 4800,
+  "postType": "spent",
+  "amountKrw": 4800,
   "category": "카페/간식",
   "item": "아이스 아메리카노",
   "reason": "야근해서",
-  "room_ids": ["6a1f0c2e-3b7d-4c55-9d7e-2f1b8c0a9e41"]
+  "roomIds": ["6a1f0c2e-3b7d-4c55-9d7e-2f1b8c0a9e41"]
 }
 ```
 
 | 필드 | 규칙 |
 |---|---|
-| `post_type` | `spent` \| `considering` |
-| `amount_krw` | 양의 정수 |
+| `postType` | `spent` \| `considering` |
+| `amountKrw` | 양의 정수 |
 | `category` | `식비` `배달` `카페/간식` `교통/택시` `쇼핑/패션` `뷰티` `취미/여가` `술/유흥` `구독` `생활` `기타` 중 하나 |
 | `item` | 앞뒤 공백 제거 뒤 1~30자 |
 | `reason` | 선택. 앞뒤 공백 제거 뒤 200자 이하, 비면 `null` |
-| `room_ids` | 1개 이상. 요청자가 멤버인 방만 |
+| `roomIds` | 1개 이상. 요청자가 멤버인 방만 |
 
 **Response `201`**
 ```json
 {
-  "submission_id": "0f5c8a52-6a0e-4a8e-9a47-1c3f2d7e8b10",
+  "submissionId": "0f5c8a52-6a0e-4a8e-9a47-1c3f2d7e8b10",
   "status": "NEEDS_INPUT",
   "revision": "3b1f…(sha256 hex)",
-  "intake_result": {
-    "schema_version": 1,
+  "intakeResult": {
+    "schemaVersion": 1,
     "mode": "INITIAL",
     "status": "NEEDS_CLARIFICATION",
-    "item_review": { "status": "VAGUE", "suggested_item": "커피 한 잔" },
+    "itemReview": { "status": "VAGUE", "suggestedItem": "커피 한 잔" },
     "message": "무엇을 샀는지 조금 더 알려주세요",
-    "category_review": { "status": "OK", "suggested_category": null, "confidence": 0.9 },
-    "injection_detected": false,
-    "intake_source": "AI"
+    "categoryReview": { "status": "OK", "suggestedCategory": null, "confidence": 0.9 },
+    "injectionDetected": false,
+    "intakeSource": "AI"
   },
-  "post_id": null
+  "postId": null
 }
 ```
 
-- `status`: `COMPLETED` \| `NEEDS_INPUT` \| `BLOCKED`. `COMPLETED`면 `post_id`가 채워진다
+- `status`: `COMPLETED` \| `NEEDS_INPUT` \| `BLOCKED`. `COMPLETED`면 `postId`가 채워진다
 - `revision`: 다음 `complete` 요청에 그대로 보낸다
-- `intake_result`: 심문관 결과. 질문 문구는 `message`, 제안은 `item_review.suggested_item`·`category_review.suggested_category`
+- `intakeResult`: 심문관 결과. 질문 문구는 `message`, 제안은 `itemReview.suggestedItem`·`categoryReview.suggestedCategory`
 
 ### `POST /api/post-submissions/{submissionId}/complete`
 
@@ -674,29 +672,29 @@ POST /api/post-submissions
 {
   "action": "REVISE",
   "revision": "3b1f…(직전 응답의 revision)",
-  "post_type": "spent",
-  "amount_krw": 4800,
+  "postType": "spent",
+  "amountKrw": 4800,
   "category": "카페/간식",
   "item": "스타벅스 아이스 아메리카노",
   "reason": "야근해서",
-  "room_ids": ["6a1f0c2e-3b7d-4c55-9d7e-2f1b8c0a9e41"]
+  "roomIds": ["6a1f0c2e-3b7d-4c55-9d7e-2f1b8c0a9e41"]
 }
 ```
 
 - `action`: `REVISE`(고친 값으로 한 번 더 검토) \| `PROCEED`(질문을 보고 그대로 등록)
 - 최종 값 전체를 보낸다. 검증 규칙은 위 표와 같다. `PROCEED`는 직전에 검토한 값과 같아야 한다
 
-**Response `200`** — 위와 같은 형식. `REVISE`의 `intake_result.mode`는 `FINAL_CHECK`
+**Response `200`** — 위와 같은 형식. `REVISE`의 `intakeResult.mode`는 `FINAL_CHECK`
 
-- 이미 등록된 제출에 다시 보내면 `action`과 상관없이 기존 `post_id`로 `COMPLETED`를 돌려준다(게시물은 하나)
+- 이미 등록된 제출에 다시 보내면 `action`과 상관없이 기존 `postId`로 `COMPLETED`를 돌려준다(게시물은 하나)
 
 ### 오류
 
 | 상황 | 상태 코드 | 바디 |
 |---|---|---|
-| 입력 규칙 위반(`item` 길이, `reason` 길이, `amount_krw`, `category`, 빈 `room_ids`, `action` 없음) | 400 | `{ "message": "..." }` |
-| `post_type`·`action` 값이 enum 밖이거나 JSON 이 깨짐 | 400 | Spring 기본 에러 형식 |
-| 요청자가 멤버가 아닌 방이 `room_ids`에 있음 | 403 | Spring 기본 에러 형식 |
+| 입력 규칙 위반(`item` 길이, `reason` 길이, `amountKrw`, `category`, 빈 `roomIds`, `action` 없음) | 400 | `{ "message": "..." }` |
+| `postType`·`action` 값이 enum 밖이거나 JSON 이 깨짐 | 400 | Spring 기본 에러 형식 |
+| 요청자가 멤버가 아닌 방이 `roomIds`에 있음 | 403 | Spring 기본 에러 형식 |
 | 없는 제출이거나 남의 제출 | 404 | Spring 기본 에러 형식 |
 | `revision`이 현재 값과 다름 | 409 | `{ "message": "제출 내용이 바뀌었습니다. 다시 불러와 주세요." }` |
 | `BLOCKED`를 `PROCEED` | 409 | `{ "message": "차단된 제출은 그대로 등록할 수 없습니다." }` |

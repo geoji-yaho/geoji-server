@@ -21,7 +21,6 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -200,13 +199,13 @@ public class SubmissionService {
 
     private static SubmissionResponse completed(UUID submissionId, UUID postId, SubmissionPayload payload,
                                                 IntakeResult intake) {
-        return new SubmissionResponse(submissionId, SubmissionStatus.COMPLETED, payload.hash(), intake.toMap(), postId);
+        return new SubmissionResponse(submissionId, SubmissionStatus.COMPLETED, payload.hash(),
+                intake.toResponseMap(), postId);
     }
 
-    @SuppressWarnings("unchecked")
     private static SubmissionResponse response(Submission submission) {
-        Map<String, Object> intake = (Map<String, Object>) Json.read(submission.getIntakeResult());
+        IntakeResult intake = IntakeResult.fromJson(submission.getIntakeResult());
         return new SubmissionResponse(submission.getId(), submission.getStatus(), submission.getPayloadHash(),
-                intake, submission.getPostId());
+                intake.toResponseMap(), submission.getPostId());
     }
 }

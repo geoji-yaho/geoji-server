@@ -279,8 +279,8 @@ class SubmissionServiceTest extends PostgresContainerSupport {
     }
 
     @Test
-    @DisplayName("10 §9 공개 경로 POST /api/post-submissions — snake_case 요청·응답, JWT 사용자 = actor")
-    void httpSnakeCase() throws Exception {
+    @DisplayName("10 §9 공개 경로 POST /api/post-submissions — camelCase 요청·응답, JWT 사용자 = actor")
+    void httpCamelCase() throws Exception {
         intakeReturns(Mode.INITIAL, Status.PASS);
         MockMvc mvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
 
@@ -288,14 +288,16 @@ class SubmissionServiceTest extends PostgresContainerSupport {
                         .with(jwt().jwt(j -> j.subject(author.toString())))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"post_type":"spent","amount_krw":4800,"category":"카페/간식",
-                                 "item":"아이스 아메리카노","reason":null,"room_ids":["%s"]}
+                                {"postType":"spent","amountKrw":4800,"category":"카페/간식",
+                                 "item":"아이스 아메리카노","reason":null,"roomIds":["%s"]}
                                 """.formatted(room)))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.submission_id").isNotEmpty())
+                .andExpect(jsonPath("$.submissionId").isNotEmpty())
                 .andExpect(jsonPath("$.status").value("COMPLETED"))
                 .andExpect(jsonPath("$.revision").isNotEmpty())
-                .andExpect(jsonPath("$.post_id").isNotEmpty())
-                .andExpect(jsonPath("$.intake_result.intake_source").value("AI"));
+                .andExpect(jsonPath("$.postId").isNotEmpty())
+                .andExpect(jsonPath("$.intakeResult.intakeSource").value("AI"))
+                .andExpect(jsonPath("$.intakeResult.itemReview.status").isNotEmpty())
+                .andExpect(jsonPath("$.intakeResult.intake_source").doesNotExist());
     }
 }
