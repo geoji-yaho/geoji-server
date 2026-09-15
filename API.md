@@ -538,9 +538,13 @@ MVP 설계서 13장 "시상식 즉시 생성 버튼"용 데모 엔드포인트. 
 
 ## 10. 지출 재판 (유죄/무죄 투표 → AI 판결 → 형 집행)
 
-와이어프레임 흐름 B: 지출 등록 → 방 피드 카드에서 유죄/무죄 투표 → 마감(또는 즉시 판결
-버튼) 시 AI가 판결문·형량을 정함 → 유죄면 무지출 형 집행. **`quick_tap`("돈 썼어요")
-지출만 재판 대상이다 — `purchase_check`("살까 말까")는 대상이 아니다.**
+와이어프레임 흐름 B: 지출 등록 → 방 피드 카드에서 투표 → 마감(또는 즉시 판결 버튼) 시
+판결. 지출 종류(`source`)에 따라 투표 값과 판결 규칙이 다르다(S-06·S-14).
+
+| 지출 종류 | 투표 값 | 판결 | 형량 |
+|---|---|---|---|
+| `quick_tap`("돈 썼어요") | `guilty` \| `notGuilty` | 유죄 표가 더 많으면 `guilty`, 동률 포함 그 밖은 `notGuilty`. 표가 0개면 판결 불가(409) | 유죄면 AI가 무지출 형 일수를 정함 |
+| `purchase_check`("살까 말까") | `agree`(구매 동의) \| `disagree`(기각) | 전체 표가 2표 미만이면 `dismissed`(각하). 그 밖은 동의가 기각보다 많으면 `agree`, 동률 포함 그 밖은 `disagree` | 없음. `sentenceDays`·`sentenceStartedAt`·`sentenceEndedAt` 은 늘 `null` |
 
 재판은 별도로 "여는" API가 없다 — 그 방·지출 조합으로 처음 조회하거나 투표하는 순간
 자동 생성된다. 마감 시한은 새로 받지 않고 **그 방의 `voteDeadlineMinutes`**(방 생성 시
@@ -571,32 +575,35 @@ AI 팀 API가 나오면 `AiClient.judge(...)` 구현만 교체하면 된다.
   "judgedAt": null,
   "guiltyVotes": 3,
   "notGuiltyVotes": 1,
+  "agreeVotes": 0,
+  "disagreeVotes": 0,
   "myVote": "guilty",
   "votes": [
     { "id": "v1...", "voterUserId": "6db45245-5518-40e8-92dc-7e8daf8e65fc", "verdict": "guilty", "reason": "밥이 없으면 라면을 드셨어야죠.", "createdAt": "2026-09-06T15:10:00+09:00" }
   ]
 }
 ```
-`myVote`는 요청자 본인이 아직 투표하지 않았으면 `null`.
+`myVote`는 요청자 본인이 아직 투표하지 않았으면 `null`. `guiltyVotes`·`notGuiltyVotes`는 돈 썼어요,
+`agreeVotes`·`disagreeVotes`는 살까 말까 재판의 표 수이고 해당 없는 쪽은 늘 `0`이다.
 
-**Response `400`** — `expenseId`가 없거나, `purchase_check` 지출이거나, 지출 작성자가
-이 방 멤버가 아닌 경우
+**Response `400`** — `expenseId`가 없거나, 지출 작성자가 이 방 멤버가 아닌 경우
 **Response `409`** — 요청자 본인이 이 방 멤버가 아닌 경우
 
 ### `POST /api/rooms/{roomId}/expenses/{expenseId}/votes`
 
-유죄/무죄 투표. S-14 화면에서 호출.
+배심원 투표. S-14 화면에서 호출.
 
 **Request**
 ```json
 { "verdict": "guilty", "reason": "밥이 없으면 라면을 드셨어야죠." }
 ```
-`verdict`: `guilty` \| `notGuilty`, `reason`은 1~500자 필수. (`agree`/`disagree`/`dismissed`는
-"살까 말까" 구매 동의/기각·정족수 미달 각하용으로 DB enum에는 있지만 이 엔드포인트는 아직
-안 받는다 — 지출 재판은 `guilty`/`notGuilty`만 유효)
+`verdict`: 돈 썼어요는 `guilty` \| `notGuilty`, 살까 말까는 `agree` \| `disagree`. `reason`은 1~500자 필수.
+`dismissed`는 판결 결과일 뿐 투표 값이 아니다.
 
 **Response `201`** — 갱신된 재판 현황 (위 `GET .../trial`과 같은 형식)
-**Response `400`** — 존재하지 않는 지출
+**Response `400`**
+- 존재하지 않는 지출
+- 지출 종류에 맞지 않는 `verdict` — `{ "message": "살까 말까는 agree 또는 disagree만 투표할 수 있습니다." }` 또는 `{ "message": "지출 재판은 guilty 또는 notGuilty만 투표할 수 있습니다." }`
 **Response `409`**
 - 본인 지출에 투표하려는 경우 — `{ "message": "본인 지출에는 투표할 수 없습니다." }`
 - 이미 투표한 경우 — `{ "message": "이미 투표했습니다." }`
@@ -608,14 +615,19 @@ AI 팀 API가 나오면 `AiClient.judge(...)` 구현만 교체하면 된다.
 MVP 데모용 "즉시 판결" — 5장 시상식 `/generate`와 같은 패턴. 마감을 기다리지 않고
 지금까지 모인 표로 바로 판결한다.
 
-**동작**
+**동작 — 돈 썼어요(`quick_tap`)**
 1. 지금까지의 유죄/무죄 표를 집계한다 (동률이면 무죄).
 2. `AiClient.judge(...)`를 호출해 판결문과 (유죄일 때만) 무지출 형 일수를 받는다.
 3. 유죄면 `sentenceStartedAt`을 지금, `sentenceEndedAt`을 `sentenceStartedAt + sentenceDays`로 채운다.
 
-**Response `200`** — 확정된 재판 (`verdict`, `verdictText`, 유죄면 `sentenceDays` 등이 채워짐)
+**동작 — 살까 말까(`purchase_check`)**
+1. 동의/기각 표를 집계한다. 전체 2표 미만이면 `dismissed`, 동의 > 기각이면 `agree`, 그 밖(동률 포함)은 `disagree`.
+2. `AiClient.judgePurchase(...)`로 판결문만 받는다. 형량 필드는 채우지 않는다.
+3. 표가 0개여도 409가 아니라 `dismissed`로 확정된다.
+
+**Response `200`** — 확정된 재판 (`verdict`, `verdictText`, 돈 썼어요 유죄면 `sentenceDays` 등이 채워짐)
 **Response `400`** — 아직 투표가 시작되지 않은 재판(`GET .../trial`을 먼저 호출한 적이 없음)
-**Response `409`** — 투표가 하나도 없거나, 이미 판결이 확정된 경우
+**Response `409`** — 이미 판결이 확정된 경우, 또는 돈 썼어요 재판에 투표가 하나도 없는 경우
 
 ## 11. 게시물 등록(제출)
 

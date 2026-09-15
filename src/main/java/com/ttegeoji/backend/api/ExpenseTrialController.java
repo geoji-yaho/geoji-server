@@ -27,8 +27,9 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
-// 지출 재판(유죄/무죄 투표 → AI 판결 → 형 집행) — 와이어프레임 흐름 B.
-// "돈 썼어요"(quick_tap) 지출만 대상이다. "살까 말까"(purchase_check)는 재판 대상이 아니다.
+// 지출 재판 — 와이어프레임 흐름 B.
+// "돈 썼어요"(quick_tap): 유죄/무죄 투표 → AI 판결 → 유죄면 형 집행.
+// "살까 말까"(purchase_check): 동의/기각 투표 → 판결(형량 없음). S-06·S-14.
 // 마감 시한은 별도로 두지 않고 방 설정(rooms.vote_deadline_minutes)을 그대로 쓴다.
 @RestController
 @RequestMapping("/api/rooms/{roomId}/expenses/{expenseId}")
@@ -42,15 +43,20 @@ public class ExpenseTrialController {
     private final RoomMemberRepository roomMemberRepository;
     private final AiClient aiClient;
 
+    private static final int PURCHASE_QUORUM = 2;
+
+    private static boolean verdictFits(ExpenseSource source, VerdictType verdict) {
+        return source == ExpenseSource.purchase_check
+                ? verdict == VerdictType.agree || verdict == VerdictType.disagree
+                : verdict == VerdictType.guilty || verdict == VerdictType.notGuilty;
+    }
+
     // 재판은 지출이 방 피드에 처음 노출되는 순간 암묵적으로 열린다 — 없으면 지금 만든다.
     private ExpenseTrial getOrCreateTrial(UUID roomId, UUID expenseId) {
         return trialRepository.findByRoomIdAndExpenseId(roomId, expenseId)
                 .orElseGet(() -> {
                     Expense expense = expenseRepository.findById(expenseId)
                             .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 지출 기록입니다."));
-                    if (expense.getSource() != ExpenseSource.quick_tap) {
-                        throw new IllegalArgumentException("\"살까 말까\" 기록은 재판 대상이 아닙니다.");
-                    }
                     if (!roomMemberRepository.existsById_RoomIdAndId_UserId(roomId, expense.getUserId())) {
                         throw new IllegalArgumentException("이 지출은 해당 방에서 보이지 않습니다.");
                     }
@@ -91,14 +97,14 @@ public class ExpenseTrialController {
         if (!roomMemberRepository.existsById_RoomIdAndId_UserId(roomId, voterId)) {
             throw new IllegalStateException("이 방의 멤버만 투표할 수 있습니다.");
         }
-        // VerdictType엔 agree/disagree("살까 말까" 구매 동의/기각)·dismissed도 있지만, 지출
-        // 재판은 guilty/notGuilty만 유효하다 — 여기서 막지 않으면 판결 집계가 깨진다.
-        if (request.verdict() != VerdictType.guilty && request.verdict() != VerdictType.notGuilty) {
-            throw new IllegalArgumentException("지출 재판은 guilty 또는 notGuilty만 투표할 수 있습니다.");
-        }
-
         Expense expense = expenseRepository.findById(expenseId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 지출 기록입니다."));
+        // 돈 썼어요는 guilty/notGuilty, 살까 말까는 agree/disagree 만. 섞이면 판결 집계가 깨진다(dismissed 는 투표값이 아니다)
+        if (!verdictFits(expense.getSource(), request.verdict())) {
+            throw new IllegalArgumentException(expense.getSource() == ExpenseSource.purchase_check
+                    ? "살까 말까는 agree 또는 disagree만 투표할 수 있습니다."
+                    : "지출 재판은 guilty 또는 notGuilty만 투표할 수 있습니다.");
+        }
         if (expense.getUserId().equals(voterId)) {
             throw new IllegalStateException("본인 지출에는 투표할 수 없습니다.");
         }
@@ -144,19 +150,33 @@ public class ExpenseTrialController {
         }
 
         List<ExpenseVote> votes = voteRepository.findByTrialIdOrderByCreatedAtAsc(trial.getId());
-        if (votes.isEmpty()) {
-            throw new IllegalStateException("아직 투표가 없어 판결할 수 없습니다.");
-        }
-
-        long guiltyVotes = votes.stream().filter(v -> v.getVerdict() == VerdictType.guilty).count();
-        long notGuiltyVotes = votes.size() - guiltyVotes;
-        boolean isGuilty = guiltyVotes > notGuiltyVotes;
-
         Expense expense = expenseRepository.findById(expenseId).orElseThrow();
         Room room = roomRepository.findById(roomId).orElseThrow();
         int ruleCount = room.getRules() == null ? 0 : room.getRules().length;
         String caseSummary = "%d원 지출, 사유: %s, 참고된 방 규칙 %d개".formatted(
                 expense.getAmount(), expense.getMemo() == null ? "미기재" : expense.getMemo(), ruleCount);
+
+        // 살까 말까: 정족수 2표 미달이면 dismissed, 동의가 기각보다 많으면 agree, 동률 포함 그 밖은 disagree. 형량 없음
+        if (expense.getSource() == ExpenseSource.purchase_check) {
+            long agreeVotes = votes.stream().filter(v -> v.getVerdict() == VerdictType.agree).count();
+            long disagreeVotes = votes.stream().filter(v -> v.getVerdict() == VerdictType.disagree).count();
+            VerdictType verdict = agreeVotes + disagreeVotes < PURCHASE_QUORUM ? VerdictType.dismissed
+                    : agreeVotes > disagreeVotes ? VerdictType.agree : VerdictType.disagree;
+
+            trial.setVerdict(verdict);
+            trial.setVerdictText(aiClient.judgePurchase(caseSummary, agreeVotes, disagreeVotes, verdict));
+            trial.setJudgedAt(OffsetDateTime.now());
+            trialRepository.saveAndFlush(trial);
+            return ResponseEntity.ok(TrialResponse.from(trial, votes, currentUserId));
+        }
+
+        if (votes.isEmpty()) {
+            throw new IllegalStateException("아직 투표가 없어 판결할 수 없습니다.");
+        }
+
+        long guiltyVotes = votes.stream().filter(v -> v.getVerdict() == VerdictType.guilty).count();
+        long notGuiltyVotes = votes.stream().filter(v -> v.getVerdict() == VerdictType.notGuilty).count();
+        boolean isGuilty = guiltyVotes > notGuiltyVotes;
 
         AiClient.VerdictCopy copy = aiClient.judge(caseSummary, guiltyVotes, notGuiltyVotes, isGuilty);
 

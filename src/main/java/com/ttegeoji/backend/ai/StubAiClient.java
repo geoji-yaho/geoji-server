@@ -1,5 +1,6 @@
 package com.ttegeoji.backend.ai;
 
+import com.ttegeoji.backend.domain.enums.VerdictType;
 import org.springframework.stereotype.Component;
 
 /**
@@ -44,5 +45,16 @@ public class StubAiClient implements AiClient {
                 "유죄. 무기징역, " + sentenceDays + "일 무지출형에 처한다. 배심원 투표 결과 유죄 " + guiltyVotes
                         + "표, 무죄 " + notGuiltyVotes + "표. 사건 개요: " + caseSummary + " (AI 연동 전 데모용 문구)",
                 sentenceDays);
+    }
+
+    @Override
+    public String judgePurchase(String caseSummary, long agreeVotes, long disagreeVotes, VerdictType verdict) {
+        String head = switch (verdict) {
+            case agree -> "구매 동의.";
+            case disagree -> "구매 기각.";
+            default -> "각하. 정족수(2표)에 못 미쳐 판단하지 않습니다.";
+        };
+        return head + " 배심원 투표 결과 동의 " + agreeVotes + "표, 기각 " + disagreeVotes + "표. 사건 개요: "
+                + caseSummary + " (AI 연동 전 데모용 문구)";
     }
 }
