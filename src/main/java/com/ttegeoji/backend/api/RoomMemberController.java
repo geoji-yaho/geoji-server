@@ -5,8 +5,14 @@ import com.ttegeoji.backend.domain.RoomMember;
 import com.ttegeoji.backend.dto.RoomMemberResponse;
 import com.ttegeoji.backend.repository.ProfileRepository;
 import com.ttegeoji.backend.repository.RoomMemberRepository;
+import com.ttegeoji.backend.security.CurrentUser;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -52,5 +58,20 @@ public class RoomMemberController {
                 .toList();
 
         return ResponseEntity.ok(response);
+    }
+
+    // 방 탈퇴. 방장이 나가도 방은 그대로 남는다(방 삭제는 별도 API, RoomController).
+    @DeleteMapping("/me")
+    @Transactional
+    public ResponseEntity<?> leave(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID roomId) {
+        UUID userId = CurrentUser.idOf(jwt);
+
+        if (!roomMemberRepository.existsById_RoomIdAndId_UserId(roomId, userId)) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "이 방의 멤버가 아닙니다."));
+        }
+
+        roomMemberRepository.deleteById_RoomIdAndId_UserId(roomId, userId);
+
+        return ResponseEntity.noContent().build();
     }
 }

@@ -48,6 +48,7 @@ CREATE TABLE rooms (
     created_by uuid NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
+    deleted_at timestamptz,
     PRIMARY KEY (id)
 );
 

@@ -56,4 +56,7 @@ public class Room {
     @Generated(event = {EventType.INSERT, EventType.UPDATE}) // DB 트리거(set_updated_at)가 update마다 다시 채운다
     @Column(name = "updated_at", insertable = false, updatable = false)
     private OffsetDateTime updatedAt;
+
+    @Column(name = "deleted_at")
+    private OffsetDateTime deletedAt;
 }
