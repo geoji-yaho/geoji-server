@@ -1,5 +1,7 @@
 package com.ttegeoji.backend.ai;
 
+import com.ttegeoji.backend.domain.enums.VerdictType;
+
 /**
  * AI 서비스(상 발명, 도전 과제 서술, 순찰 문구 생성)와의 경계.
  * AI 쪽 API 문서가 아직 없어서 지금은 {@link StubAiClient}가 하드코딩된 문구를 돌려준다.
@@ -16,6 +18,9 @@ public interface AiClient {
 
     // 유죄/무죄 투표가 마감된 지출 재판의 판결문 작성. 유죄면 무지출 형(일수)까지 같이 정한다.
     VerdictCopy judge(String caseSummary, long guiltyVotes, long notGuiltyVotes, boolean guilty);
+
+    // "살까 말까" 재판의 판결문. verdict 는 agree·disagree·dismissed 중 하나이고 형량은 없다.
+    String judgePurchase(String caseSummary, long agreeVotes, long disagreeVotes, VerdictType verdict);
 
     record AwardCopy(String title, String description) {
     }
