@@ -137,6 +137,29 @@ Supabase Auth 가입만으로는 `profiles`에 행이 생기지 않는다. **로
 { "message": "유효하지 않은 초대 코드입니다." }
 ```
 
+### `DELETE /api/rooms/{roomId}/members/me`
+
+방 탈퇴. 방장이 나가도 방 자체는 삭제되지 않는다(방 삭제는 아래 별도 API).
+
+**Response `204`** — 바디 없음
+**Response `404`** — 이 방의 멤버가 아님(이미 탈퇴한 경우 포함)
+```json
+{ "message": "이 방의 멤버가 아닙니다." }
+```
+
+### `DELETE /api/rooms/{roomId}`
+
+방 삭제. **방장만** 할 수 있다. 소프트 삭제라 `GET /api/rooms`(목록)·`GET /api/rooms/{roomId}`(단건 조회)·
+`POST /api/rooms/join/{inviteCode}`(참가)에서 곧바로 숨겨진다. 판결·투표·댓글 기록(`votes`·`post_comments`)은
+이 방을 참조하고 있어 지우지 않는다 — 방만 비활성화될 뿐, 과거에 이 방에서 나온 판결 기록은 게시물 쪽에서 그대로 남는다.
+
+**Response `204`** — 바디 없음
+**Response `403`** — 방장이 아님
+```json
+{ "message": "방장만 방을 삭제할 수 있습니다." }
+```
+**Response `404`** — 존재하지 않거나 이미 삭제된 방
+
 ---
 
 ## 3. 지출 기록 (Expense)
