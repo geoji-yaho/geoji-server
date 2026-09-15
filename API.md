@@ -703,3 +703,303 @@ POST /api/post-submissions
 | `PROCEED`인데 값이 검토한 값과 다름 | 409 | `{ "message": "검토한 값과 다릅니다. 고친 값은 REVISE 로 보내 주세요." }` |
 | 이미 한 번 `REVISE`함 | 409 | `{ "message": "이미 한 번 고쳤습니다." }` |
 | 지금 상태에서 할 수 없는 동작 | 409 | `{ "message": "지금은 완료할 수 없는 제출입니다." }` 또는 `"지금은 고칠 수 없는 제출입니다."` |
+
+## 12. 게시물 재판(투표·판결 조회·공유 카드·삭제)
+
+11장에서 등록한 게시물(`postId`)의 재판이다. 10장 `expenses` 재판과 테이블·경로가 다르다.
+
+흐름: 공유 방 멤버가 투표 → 투표 가능 인원 전원이 투표하거나 마감(`voteDeadlineAt`)이 지나면 평결 확정 →
+AI 판사가 형량·판결문을 만든다(최대 약 40초, 늦으면 템플릿 문구) → 프론트는 판결 조회를 폴링한다.
+
+- 게시물을 볼 수 있는 사람: **작성자** 또는 **공유가 철회되지 않은 공유 방의 멤버**
+- 게시물이 없거나, 삭제됐거나, 볼 수 없는 사람이면 `404 {"message"}`(셋을 구분하지 않는다)
+- 요청·응답 JSON 은 camelCase. 값이 없는 필드도 키는 `null` 로 온다
+- 전달은 폴링만 한다. Realtime·SSE 는 없다
+
+### `POST /api/posts/{postId}/votes`
+
+배심원 투표. S-14 화면에서 호출한다. 게시물당 1인 1표이고 수정할 수 없다. 작성자는 투표하지 않는다.
+
+**Request**
+```json
+{
+  "verdict": "guilty",
+  "reason": "지하철이 있었잖아요",
+  "roomId": "6a1f0c2e-3b7d-4c55-9d7e-2f1b8c0a9e41"
+}
+```
+
+| 필드 | 규칙 |
+|---|---|
+| `verdict` | `spent` 게시물은 `guilty` \| `notGuilty`, `considering` 게시물은 `agree` \| `disagree` |
+| `reason` | 필수. 1~500자, 공백만은 안 된다. 앞뒤 공백을 지우지 않고 그대로 저장한다 |
+| `roomId` | 투표하는 방. 이 게시물이 공유된(철회되지 않은) 방이고 요청자가 그 방 멤버여야 한다 |
+
+**Response `201`**
+```json
+{
+  "id": "0b8e5c1a-2f4d-4a6b-8c3e-9d1f2a7b6c50",
+  "postId": "3c9a1e7b-5d2f-4b8a-9e6c-1a2b3c4d5e6f",
+  "roomId": "6a1f0c2e-3b7d-4c55-9d7e-2f1b8c0a9e41",
+  "verdict": "guilty",
+  "reason": "지하철이 있었잖아요",
+  "createdAt": "2026-09-15T12:03:12.345678Z"
+}
+```
+
+- 이 표로 투표 가능 인원(공유 방 멤버 합집합 − 작성자) 전원이 투표했으면 같은 요청 안에서 평결이 확정된다
+
+**오류** — 아래 순서로 판정한다
+
+| 상황 | 상태 코드 | 바디 |
+|---|---|---|
+| 게시물이 없거나 삭제됨 | 404 | `{ "message": "게시물을 찾을 수 없습니다." }` |
+| 작성자가 투표 | 403 | `{ "message": "본인 게시물에는 투표할 수 없습니다." }` |
+| `roomId` 가 없거나, 공유 방이 아니거나, 공유가 철회됐거나, 요청자가 그 방 멤버가 아님 | 403 | `{ "message": "이 방에서는 투표할 수 없습니다." }` |
+| `verdict` 가 게시물 종류에 맞지 않음(`dismissed`·없음 포함) | 400 | `{ "message": "이 게시물에 맞지 않는 평결입니다." }` |
+| `reason` 없음·빈 값·공백만 | 400 | `{ "message": "투표 사유를 입력해 주세요." }` |
+| `reason` 500자 초과 | 400 | `{ "message": "투표 사유는 500자 이하여야 합니다." }` |
+| 마감이 지났거나 평결이 이미 확정됨 | 409 | `{ "message": "투표가 마감되었습니다." }` |
+| 이미 투표함 | 409 | `{ "message": "이미 투표했습니다." }` |
+| JSON 이 깨졌거나 `roomId` 가 UUID 가 아님 | 400 | Spring 기본 에러 형식 |
+| JWT 없음 | 401 | - |
+
+### `GET /api/posts/{postId}/verdict?room_id={roomId}`
+
+판결 조회(폴링용). 스키마는 AI 저장소 `contracts/verdict-view-v1.schema.json` 의 키를 camelCase 로 바꾼 것이다.
+
+- `room_id`(선택): 이 방의 강도(`mild`·`spicy`·`hell`) 문구를 본다. 철회되지 않은 공유 방이어야 하고, 작성자가 아니면 요청자가 그 방 멤버여야 한다.
+  없으면 대표 강도(표가 가장 많이 나온 방의 강도)
+- 생성 중에도 `200` 이고 `view` 가 `null` 이다. 빈 화면 대신 대기 메시지를 보여 준다
+
+**Response `200`**
+```json
+{
+  "schemaVersion": 1,
+  "postId": "3c9a1e7b-5d2f-4b8a-9e6c-1a2b3c4d5e6f",
+  "juryStatus": "guilty",
+  "sentenceStatus": "FINAL",
+  "textStatus": "AI_READY",
+  "textVersion": 2,
+  "view": {
+    "intensity": "mild",
+    "headline": "택시비 유죄",
+    "statement": ["배심원 3인 중 3인이 유죄로 판단했습니다.", "지하철이 있었습니다."],
+    "sentence": "oneDay",
+    "sentenceLabel": "징역 1일 (내일 하루 무지출)",
+    "sentencingReason": "같은 달 택시가 세 번째입니다.",
+    "source": "AI",
+    "meme": {
+      "tag": "GUILTY_LIGHT",
+      "imageId": "9f2c4b1e-7a3d-4e5f-8b6a-0c1d2e3f4a5b",
+      "imageUrl": "https://cdn.example.com/memes/guilty-light-01.png"
+    }
+  },
+  "pollAfterMs": 0
+}
+```
+
+| 필드 | 내용 |
+|---|---|
+| `schemaVersion` | 늘 `1` |
+| `juryStatus` | 배심원 평결 `guilty` \| `notGuilty` \| `agree` \| `disagree` \| `dismissed`(정족수 미달 각하). 아직 투표 중이면 `null` |
+| `sentenceStatus` | `PENDING`(형량 미확정) \| `FINAL` |
+| `textStatus` | `PENDING` \| `GENERATING` \| `TEMPLATE_READY`(템플릿 문구) \| `AI_READY`(AI 문구) |
+| `textVersion` | 문구 버전. 문구가 바뀔 때마다 커진다. 투표 중이면 `0` |
+| `view` | 보여 줄 문구. 투표 중·생성 중·각하면 `null` |
+| `view.statement` | 판결문 문장 배열 |
+| `view.sentence`·`view.sentenceLabel` | 형량 코드 `probation` \| `oneDay` \| `life` 와 표시 문구. 무죄·동의·기각이면 `null` |
+| `view.sentencingReason` | 양형 이유. `source` 가 `TEMPLATE` 이면 `null` |
+| `view.source` | `AI` \| `TEMPLATE`. `TEMPLATE` 이면 AI 판사 라벨과 양형 이유 블록을 숨긴다 |
+| `view.meme` | 짤 이미지 metadata. 없으면 `null` |
+| `pollAfterMs` | 다음 조회까지 서버가 권장하는 대기(ms). 아래 표 |
+
+| 상태 | `view` | `pollAfterMs` |
+|---|---|---|
+| 투표 중(`juryStatus: null`) | `null` | `5000` |
+| `textStatus` `PENDING`·`GENERATING` | `null` | `1000` |
+| `TEMPLATE_READY` | 템플릿 문구 | `30000` |
+| `AI_READY` | AI 문구 | `0` |
+| `juryStatus: dismissed` | `null` | `0` |
+
+- 게시물 삭제·공유 철회 뒤에 저장된 AI 문구를 쓸 수 없게 되면 곧바로 템플릿 문구(`source: TEMPLATE`)로 바뀐다
+- 게시물이 삭제되면 `404`
+
+**폴링 규칙(프론트)**
+
+- 1초 간격으로 시작해 15초가 지나면 5초 간격으로 늦춘다. `pollAfterMs` 는 서버 권장값이다
+- 화면을 떠나면 진행 중인 요청과 타이머를 취소한다
+- `textStatus` 가 `AI_READY` 이거나 `juryStatus` 가 `dismissed` 면 즉시 멈춘다
+- `TEMPLATE_READY` 면 템플릿 문구를 보여 준 뒤 30초 뒤에 한 번 더 보거나, 화면에 다시 들어올 때 본다(AI 문구로 바뀔 수 있다)
+- 이미 받은 것보다 `textVersion` 이 작은 응답이 늦게 도착하면 버린다. 그 응답으로 화면을 덮지 않는다
+
+**오류**
+
+| 상황 | 상태 코드 | 바디 |
+|---|---|---|
+| 게시물 없음·삭제됨·볼 수 없는 사람·`room_id` 가 볼 수 없는 방 | 404 | `{ "message": "게시물을 찾을 수 없습니다." }` |
+| `room_id` 가 UUID 가 아님 | 400 | Spring 기본 에러 형식 |
+| JWT 없음 | 401 | - |
+
+### `GET /api/posts/{postId}/share-card`
+
+S-11 판결 공유 카드. 방 밖으로 나갈 수 있는 문구와 이미지 metadata 만 준다.
+금액·무엇을·사유·투표 사유·배심원·근거 원문·양형 이유는 없다.
+
+- 강도는 대표 강도(표가 가장 많이 나온 방의 강도)
+- AI 문장이 공개 근거만 인용했으면 그대로, 방 안에서만 볼 수 있는 근거를 인용했으면 그 문장만 템플릿 문장으로 바뀐다.
+  한 문장이라도 바뀌면 `headline` 도 템플릿(`유죄`·`무죄`·`동의`·`기각`)이다
+- 삭제·공유 철회로 저장된 AI 문구를 쓸 수 없게 되면 전부 템플릿이다
+
+**Response `200`**
+```json
+{
+  "postId": "3c9a1e7b-5d2f-4b8a-9e6c-1a2b3c4d5e6f",
+  "postType": "spent",
+  "juryStatus": "guilty",
+  "intensity": "mild",
+  "headline": "택시비 유죄",
+  "statement": ["배심원 3인 중 3인이 유죄로 판단했습니다.", "지하철이 있었습니다."],
+  "sentence": "oneDay",
+  "sentenceLabel": "징역 1일 (내일 하루 무지출)",
+  "meme": {
+    "tag": "GUILTY_LIGHT",
+    "imageId": "9f2c4b1e-7a3d-4e5f-8b6a-0c1d2e3f4a5b",
+    "imageUrl": "https://cdn.example.com/memes/guilty-light-01.png"
+  }
+}
+```
+
+- `sentence`·`sentenceLabel` 은 무죄·동의·기각이면 `null`, `meme` 은 짤이 없으면 `null`
+
+**오류**
+
+| 상황 | 상태 코드 | 바디 |
+|---|---|---|
+| 게시물 없음·삭제됨·볼 수 없는 사람 | 404 | `{ "message": "게시물을 찾을 수 없습니다." }` |
+| 형량이 아직 확정되지 않음(투표 중·생성 중·각하) | 404 | `{ "message": "판결이 아직 확정되지 않았습니다." }` |
+| JWT 없음 | 401 | - |
+
+### `DELETE /api/posts/{postId}`
+
+게시물 삭제. 작성자만 할 수 있다. 삭제하면 판결 조회·공유 카드가 곧바로 `404` 가 되고, 진행 중인 AI 작업은 취소된다.
+
+**Response `204`** — 바디 없음. 이미 삭제된 게시물을 작성자가 다시 지워도 `204`
+
+**오류**
+
+| 상황 | 상태 코드 | 바디 |
+|---|---|---|
+| 게시물 없음 | 404 | `{ "message": "게시물을 찾을 수 없습니다." }` |
+| 작성자가 아님 | 403 | `{ "message": "본인 게시물만 삭제할 수 있습니다." }` |
+| JWT 없음 | 401 | - |
+
+### GET /api/posts/{postId}/trace
+
+데모 C 관측 화면용 AI trace 조회(10 §4.5). JWT 필요. 백엔드가 AI API 를 프록시한다.
+
+- 게시물 **작성자만** 조회한다. 게시물이 없거나 삭제됐거나 작성자가 아니면 `404 {"message"}`(셋을 구분하지 않는다)
+- `200` 본문은 AI trace 를 camelCase 로 바꾼 것이다. 원문·개별 id 는 없다
+
+  | 필드 | 내용 |
+  | ---- | ---- |
+  | `postId` | 게시물 id |
+  | `dossier` | 최신 조서. 없으면 `null`. `labels[]`, `createdAt`, `invalidated`, `evidence[]`(`label`, `epistemicType`, `factType`, `scope{visibility, roomCount}`, `occurredAt`, `invalidated`, `sources[]{sourceType, count}`) |
+  | `timeline[]` | 모델 호출 순서. `node`, `callIndex`, `vendor`, `modelId`, `status`, `startedAt`, `finishedAt`, `durationMs`, `promptTokens`, `completionTokens`, `actualMicroUsd` |
+  | `cost` | `actualMicroUsd`, `unknownCalls`, `unknownEstimatedMaxMicroUsd`, `calls` |
+
+- trace 기록이 없으면 `404 {"message"}`
+- AI 서버 장애(5xx·연결 실패·예상 밖 응답) `502 {"message"}`, AI 서버가 2초 안에 응답하지 않으면 `504 {"message"}`
+- JWT 없음 `401`
+
+## 13. 게시물 댓글
+
+12장 게시물(`postId`)에 다는 댓글이다. 4장 격자 칸 댓글(`expenses` 단위)과 테이블·경로가 다르다. 1단계(대댓글 없음), 수정 없음.
+
+- 댓글은 **방 단위**다. 쓸 때 어느 공유 방에서 쓰는지(`roomId`)를 정한다
+- 목록을 볼 수 있는 사람은 12장 게시물을 볼 수 있는 사람(작성자·철회되지 않은 공유 방 멤버)이다
+- 판결이 확정된 게시물의 댓글은 AI 기억에 쓰인다(판결 확정 전에 단 댓글도 확정 뒤에 쓰인다). 거르는 것은 AI 쪽이 한다
+- 요청·응답 JSON 은 camelCase
+
+### `GET /api/posts/{postId}/comments`
+
+댓글 목록. 오래된 순, 삭제된 댓글은 빠진다. 쿼리 파라미터 없음.
+
+- 작성자는 철회되지 않은 공유 방 전체의 댓글을 본다
+- 작성자가 아니면 **자기가 멤버인** 철회되지 않은 공유 방의 댓글만 본다
+- 공유가 철회된 방의 댓글은 누구에게도 보이지 않는다
+
+**Response `200`**
+```json
+[
+  {
+    "id": "7d2e9a14-3c5b-4f8e-a1d6-0b9c8e7f6a52",
+    "postId": "3c9a1e7b-5d2f-4b8a-9e6c-1a2b3c4d5e6f",
+    "roomId": "6a1f0c2e-3b7d-4c55-9d7e-2f1b8c0a9e41",
+    "userId": "6db45245-5518-40e8-92dc-7e8daf8e65fc",
+    "nickname": "짠돌이",
+    "content": "택시 세 번째는 선 넘었다",
+    "createdAt": "2026-09-15T12:05:40.123456Z"
+  }
+]
+```
+
+| 필드 | 내용 |
+|---|---|
+| `roomId` | 댓글을 단 방 |
+| `userId`·`nickname` | 댓글 작성자와 프로필 닉네임 |
+
+**오류**
+
+| 상황 | 상태 코드 | 바디 |
+|---|---|---|
+| 게시물 없음·삭제됨·볼 수 없는 사람 | 404 | `{ "message": "게시물을 찾을 수 없습니다." }` |
+| JWT 없음 | 401 | - |
+
+### `POST /api/posts/{postId}/comments`
+
+댓글 작성. 게시물 작성자도 자기가 멤버인 공유 방에서는 댓글을 달 수 있다.
+
+**Request**
+```json
+{
+  "roomId": "6a1f0c2e-3b7d-4c55-9d7e-2f1b8c0a9e41",
+  "content": "택시 세 번째는 선 넘었다"
+}
+```
+
+| 필드 | 규칙 |
+|---|---|
+| `roomId` | 필수. 이 게시물이 공유된(철회되지 않은) 방이고 요청자가 그 방 멤버여야 한다 |
+| `content` | 필수. 1~200자, 공백만은 안 된다. 앞뒤 공백을 지우지 않고 그대로 저장한다 |
+
+**Response `201`** — 목록 한 건과 같은 모양
+
+**오류** — 아래 순서로 판정한다
+
+| 상황 | 상태 코드 | 바디 |
+|---|---|---|
+| 게시물 없음·삭제됨·볼 수 없는 사람 | 404 | `{ "message": "게시물을 찾을 수 없습니다." }` |
+| `roomId` 없음·UUID 아님 | 400 | `{ "message": "댓글을 달 방을 지정해 주세요." }` |
+| `roomId` 가 공유 방이 아니거나, 공유가 철회됐거나, 요청자가 그 방 멤버가 아님 | 403 | `{ "message": "이 방에서는 댓글을 달 수 없습니다." }` |
+| `content` 없음·빈 값·공백만 | 400 | `{ "message": "댓글 내용을 입력해 주세요." }` |
+| `content` 200자 초과 | 400 | `{ "message": "댓글은 200자 이하여야 합니다." }` |
+| JSON 이 깨짐 | 400 | Spring 기본 에러 형식 |
+| JWT 없음 | 401 | - |
+
+### `DELETE /api/posts/{postId}/comments/{commentId}`
+
+본인 댓글 삭제. 방 공유가 철회돼 게시물을 볼 수 없게 됐어도 본인 댓글은 지울 수 있다. 지운 댓글은 AI 기억에서도 곧바로 쓰이지 않는다.
+
+**Response `204`** — 바디 없음. 이미 삭제된 댓글을 본인이 다시 지워도 `204`
+
+**오류** — 아래 순서로 판정한다
+
+| 상황 | 상태 코드 | 바디 |
+|---|---|---|
+| 게시물 없음·삭제됨 | 404 | `{ "message": "게시물을 찾을 수 없습니다." }` |
+| 댓글 없음·이 게시물의 댓글이 아님 | 404 | `{ "message": "댓글을 찾을 수 없습니다." }` |
+| 남의 댓글인데 게시물을 볼 수 없는 사람 | 404 | `{ "message": "게시물을 찾을 수 없습니다." }` |
+| 남의 댓글(게시물 작성자여도) | 403 | `{ "message": "본인 댓글만 삭제할 수 있습니다." }` |
+| `postId`·`commentId` 가 UUID 아님 | 400 | Spring 기본 에러 형식 |
+| JWT 없음 | 401 | - |
