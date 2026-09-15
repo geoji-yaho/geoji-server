@@ -15,4 +15,6 @@ public interface RoomMemberRepository extends JpaRepository<RoomMember, RoomMemb
     boolean existsById_RoomIdAndId_UserId(UUID roomId, UUID userId);
 
     void deleteById_RoomIdAndId_UserId(UUID roomId, UUID userId);
+
+    long countById_RoomId(UUID roomId);
 }

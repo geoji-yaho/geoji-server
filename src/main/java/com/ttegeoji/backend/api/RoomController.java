@@ -1,9 +1,12 @@
 package com.ttegeoji.backend.api;
 
+import com.ttegeoji.backend.domain.Profile;
 import com.ttegeoji.backend.domain.Room;
 import com.ttegeoji.backend.domain.RoomMember;
 import com.ttegeoji.backend.dto.CreateRoomRequest;
+import com.ttegeoji.backend.dto.RoomInvitePreviewResponse;
 import com.ttegeoji.backend.dto.RoomResponse;
+import com.ttegeoji.backend.repository.ProfileRepository;
 import com.ttegeoji.backend.repository.RoomMemberRepository;
 import com.ttegeoji.backend.repository.RoomRepository;
 import com.ttegeoji.backend.security.CurrentUser;
@@ -28,6 +31,7 @@ public class RoomController {
 
     private final RoomRepository roomRepository;
     private final RoomMemberRepository roomMemberRepository;
+    private final ProfileRepository profileRepository;
 
     // 홈 화면(S-03)의 "방 0개 빈 상태" / 방 목록은 여기서 온다 — 내가 멤버인, 삭제되지 않은 방들만.
     @GetMapping
@@ -71,6 +75,29 @@ public class RoomController {
                 .map(RoomResponse::from)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    // 초대장 화면(S-05) 미리보기 — 참가 전이라 아직 멤버가 아닌 사람도 볼 수 있다.
+    // 초대 코드만 알고 roomId 는 모르는 상태라 GET /api/rooms/{roomId} 로는 대신할 수 없다.
+    @GetMapping("/invite/{inviteCode}")
+    public ResponseEntity<RoomInvitePreviewResponse> preview(
+            @AuthenticationPrincipal Jwt jwt, @PathVariable String inviteCode) {
+        UUID userId = CurrentUser.idOf(jwt);
+
+        Room room = roomRepository.findByInviteCode(inviteCode)
+                .filter(r -> r.getDeletedAt() == null)
+                // 참가(join)와 같은 문구·상태를 쓴다. 프론트가 만료된 초대 링크로 같이 처리한다
+                .orElseThrow(() -> new IllegalArgumentException("유효하지 않은 초대 코드입니다."));
+
+        String ownerNickname = profileRepository.findById(room.getCreatedBy())
+                .map(Profile::getNickname)
+                .orElse(null);
+
+        return ResponseEntity.ok(RoomInvitePreviewResponse.from(
+                room,
+                ownerNickname,
+                roomMemberRepository.countById_RoomId(room.getId()),
+                roomMemberRepository.existsById_RoomIdAndId_UserId(room.getId(), userId)));
     }
 
     @PostMapping("/join/{inviteCode}")
