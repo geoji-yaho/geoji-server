@@ -52,7 +52,8 @@ public class RoomController {
                 .name(request.name())
                 .spiceLevel(request.spiceLevel())
                 .voteDeadlineMinutes(request.voteDeadlineMinutes())
-                .rules(request.rules())
+                // rules 는 DB 에서 NOT NULL DEFAULT '{}' 인데 Hibernate 는 null 을 그대로 넣어 기본값이 안 먹는다
+                .rules(request.rules() != null ? request.rules() : new String[0])
                 .createdBy(userId)
                 .build();
         // saveAndFlush: save()만 쓰면 실제 INSERT가 커밋 시점까지 미뤄져서, DB 기본값(inviteCode)이
