@@ -5,6 +5,8 @@
 ## 규칙
 
 - 문서와 주석, 커밋 메시지, 응답은 한국어. 코드 식별자는 영어
+- Always write Korean (and other non-ASCII) strings in tool-call parameters  
+as literal UTF-8; never as \uXXXX unicode escape style.
 - 할 일의 정본은 `docs/10-backend-contract.md`(이하 10)다. AI 저장소 `docs/plans/10`의 **읽기 전용 사본**이라 여기서 고치지 않는다. 절은 `10 §4.3`, `10 §0.1`처럼 부른다. 사본 다루는 법과 회신 기록은 `.claude/rules/backend-contract.md`
 - 프론트가 읽는 공개 API 문서는 `API.md`다. 공개 엔드포인트를 바꾸면 같은 커밋에서 고친다
 - Git: `.claude/rules/git-workflow.md`. `type(scope): 한국어 제목`. `.env`는 `git add` 하지 않는다
@@ -21,19 +23,22 @@
 
 ## 기준 문서
 
-| 무엇 | 정본 | 여기 있는 것 |
-| ---- | ---- | ------------ |
-| 백엔드 계약·할 일·회신 대기 | AI 저장소 `docs/plans/10-backend-contract.md` | `docs/10-backend-contract.md` 사본 |
-| JSON 모양·enum·길이 | AI 저장소 `contracts/*-v1.schema.json` | 없음. 형제 저장소에서 읽는다 |
-| 폴백 문구 | AI 저장소 `contracts/fixtures/templates-v1.json` | 복사해 오면 버전 고정(10 §10) |
-| 워커가 기대하는 백엔드 동작 | AI 저장소 `tests/fakes/backend_app.py`(가짜 백엔드) | 없음. 10 과 다르면 10 이 이긴다 |
-| 프론트 enum | `geoji-web/src/shared/domain/*.ts` | Java enum 이 소문자로 맞춘다 |
-| 공개 API | 이 저장소 `API.md` | — |
-| 재판 규칙(정족수·동률·양형 밴드·마감) | `geoji-web/docs/product/SPEC.md` | 요약은 `domain-vocabulary` 룰 |
-| 업무 테이블 DDL | `supabase/migrations/`(이 저장소에 없음, 10 §15.1) | 004 초안은 `src/test/resources/db/004_verdict_generation.sql`. 머지 뒤 사용자가 옮긴다 |
+
+| 무엇                     | 정본                                            | 여기 있는 것                                                                   |
+| ---------------------- | --------------------------------------------- | ------------------------------------------------------------------------- |
+| 백엔드 계약·할 일·회신 대기       | AI 저장소 `docs/plans/10-backend-contract.md`    | `docs/10-backend-contract.md` 사본                                          |
+| JSON 모양·enum·길이        | AI 저장소 `contracts/*-v1.schema.json`           | 없음. 형제 저장소에서 읽는다                                                          |
+| 폴백 문구                  | AI 저장소 `contracts/fixtures/templates-v1.json` | 복사해 오면 버전 고정(10 §10)                                                      |
+| 워커가 기대하는 백엔드 동작        | AI 저장소 `tests/fakes/backend_app.py`(가짜 백엔드)   | 없음. 10 과 다르면 10 이 이긴다                                                     |
+| 프론트 enum               | `geoji-web/src/shared/domain/*.ts`            | Java enum 이 소문자로 맞춘다                                                      |
+| 공개 API                 | 이 저장소 `API.md`                                | —                                                                         |
+| 재판 규칙(정족수·동률·양형 밴드·마감) | `geoji-web/docs/product/SPEC.md`              | 요약은 `domain-vocabulary` 룰                                                 |
+| 업무 테이블 DDL             | `supabase/migrations/`(이 저장소에 없음, 10 §15.1)   | 004 초안은 `src/test/resources/db/004_verdict_generation.sql`. 머지 뒤 사용자가 옮긴다 |
+
 
 10 과 코드가 어긋나면 10 을 따르고 어긋남을 보고한다. 10 과 가짜 백엔드가 어긋나면 10 이 이긴다.
 
 ## 자주 틀리는 것
 
 <!-- TODO 실제로 틀렸던 것만 적는다 -->
+
