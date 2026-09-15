@@ -127,6 +127,37 @@ Supabase Auth 가입만으로는 `profiles`에 행이 생기지 않는다. **로
 **Response `200`** — `POST /api/rooms` 응답과 동일한 형식
 **Response `404`** — 존재하지 않는 `roomId`
 
+### `GET /api/rooms/invite/{inviteCode}`
+
+초대장 화면(S-05) 미리보기 — **참가하기 전에** 어떤 방인지 보여주기 위한 조회. 아직 멤버가 아닌
+사람도 호출할 수 있다(JWT는 필요). 초대 코드만 알고 `roomId`는 모르는 상태라 `GET /api/rooms/{roomId}`로는
+대신할 수 없다. 방 안의 지출·댓글은 주지 않는다.
+
+**Response `200`**
+```json
+{
+  "id": "b3f1...",
+  "name": "야근족 거지방",
+  "spiceLevel": "spicy",
+  "voteDeadlineMinutes": 720,
+  "rules": ["배달 24,000원? 밥이 있으면 라면으로 드셔야죠."],
+  "ownerNickname": "지민",
+  "memberCount": 5,
+  "alreadyMember": false
+}
+```
+
+| 필드 | 내용 |
+|---|---|
+| `ownerNickname` | 방장 닉네임. 프로필이 없으면 `null` |
+| `memberCount` | 현재 멤버 수 |
+| `alreadyMember` | 요청자가 이미 이 방 멤버인지. `true`면 참가 버튼 대신 바로 방으로 보내면 된다 |
+
+**Response `400`** — 없는 초대 코드이거나 삭제된 방. 참가와 같은 본문
+```json
+{ "message": "유효하지 않은 초대 코드입니다." }
+```
+
 ### `POST /api/rooms/join/{inviteCode}`
 
 초대 코드로 방에 참가. 이미 멤버면 그대로 방 정보만 반환 (에러 아님).
