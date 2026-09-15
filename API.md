@@ -1,8 +1,10 @@
 # 떼거지 API 명세서
 
 Base URL:
-- 배포: `http://Geoji-server-env.eba-wpbw3dvr.ap-northeast-2.elasticbeanstalk.com`
+- 배포(HTTPS, CloudFront): `https://d13dsunuwl4yud.cloudfront.net`
 - 로컬: `http://localhost:8080`
+
+GitHub Pages(HTTPS)에서 호출하려면 반드시 위 CloudFront 주소를 써야 한다. EB 도메인은 HTTP만 지원해 HTTPS 페이지에서 mixed-content로 막힌다(9/15).
 
 ## 인증
 
