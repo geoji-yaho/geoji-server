@@ -35,12 +35,25 @@ public class PostCommentService {
     private final JobEnqueuer jobEnqueuer;
     private final InvalidationService invalidationService;
 
+    /**
+     * @param roomId 보고 있는 방. 주면 그 방 댓글만 준다(작성자도 마찬가지다).
+     *               없으면 볼 수 있는 방 전부 — 작성자는 전체, 그 밖에는 자기가 멤버인 방
+     */
     @Transactional(readOnly = true)
-    public List<PostCommentResponse> list(UUID postId, UUID userId) {
+    public List<PostCommentResponse> list(UUID postId, UUID userId, UUID roomId) {
         PostRow post = visiblePost(postId, userId);
-        return queries.listVisible(postId, userId, post.authorId().equals(userId)).stream()
-                .map(PostCommentService::toResponse)
-                .toList();
+        List<CommentQueries.CommentView> views = roomId == null
+                ? queries.listVisible(postId, userId, post.authorId().equals(userId))
+                : inRoom(postId, userId, roomId);
+        return views.stream().map(PostCommentService::toResponse).toList();
+    }
+
+    /** 그 방에서 볼 자격이 있어야 준다. 멤버가 아니면 게시물 자체를 못 본 것과 같게 404 */
+    private List<CommentQueries.CommentView> inRoom(UUID postId, UUID userId, UUID roomId) {
+        if (!queries.isMemberOfActiveSharedRoom(postId, roomId, userId)) {
+            throw PublicApiRejection.notFound();
+        }
+        return queries.listInRoom(postId, roomId);
     }
 
     @Transactional

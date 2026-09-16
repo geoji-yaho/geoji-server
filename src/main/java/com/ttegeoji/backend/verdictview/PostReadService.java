@@ -32,8 +32,9 @@ public class PostReadService {
         }
 
         boolean confirmed = post.juryStatus() != null;
-        List<PostDetailResponse.VoteBrief> all = queries.votes(postId);
-        PostDetailResponse.VoteBrief mine = all.stream()
+        List<PostDetailResponse.VoteBrief> visible = queries.visibleVotes(postId, viewerId, isAuthor);
+        // 내 표의 사유는 내가 쓴 것이라 확정 전에도 가리지 않는다
+        PostDetailResponse.VoteBrief mine = visible.stream()
                 .filter(vote -> vote.voterId().equals(viewerId))
                 .findFirst()
                 .orElse(null);
@@ -43,8 +44,8 @@ public class PostReadService {
                 post.authorId(), post.authorNickname(), post.voteDeadlineAt(), post.createdAt(),
                 queries.sharedRooms(postId),
                 post.juryStatus(),
-                PostReadQueries.tallyOf(all),
-                PostReadQueries.hideReasonsUntilConfirmed(all, confirmed),
+                queries.tally(postId),
+                PostReadQueries.hideReasonsUntilConfirmed(visible, confirmed),
                 mine,
                 !isAuthor && mine == null && !confirmed,
                 queries.eligibleVoterCount(postId, post.authorId()));

@@ -102,6 +102,22 @@ public class CommentQueries {
     /**
      * 요청자가 볼 수 있는 댓글. 철회 안 된 공유 방의 댓글만이고, 작성자가 아니면 자기가 멤버인 방의 댓글만. 삭제 제외, 오래된 순
      */
+    /**
+     * 한 방의 댓글만. 게시물은 여러 방에 올라가지만 댓글 스레드는 방마다 따로다.
+     * 작성자라도 다른 방 댓글은 보지 않는다 — 방 사람들끼리 한 이야기다.
+     */
+    public List<CommentView> listInRoom(UUID postId, UUID roomId) {
+        return jdbc.query("""
+                        SELECT c.id, c.post_id, c.room_id, c.user_id, pf.nickname, c.content, c.created_at
+                          FROM post_comments c
+                          JOIN post_rooms pr ON pr.post_id = c.post_id AND pr.room_id = c.room_id
+                                            AND pr.revoked_at IS NULL
+                          JOIN profiles pf ON pf.id = c.user_id
+                         WHERE c.post_id = ? AND c.room_id = ? AND c.deleted_at IS NULL
+                         ORDER BY c.created_at, c.id""",
+                VIEW, postId, roomId);
+    }
+
     public List<CommentView> listVisible(UUID postId, UUID userId, boolean postAuthor) {
         return jdbc.query("""
                         SELECT c.id, c.post_id, c.room_id, c.user_id, pf.nickname, c.content, c.created_at
