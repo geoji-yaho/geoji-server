@@ -3,6 +3,7 @@ package com.ttegeoji.backend.verdict;
 import com.ttegeoji.backend.domain.PostRoom;
 import com.ttegeoji.backend.domain.Vote;
 import com.ttegeoji.backend.domain.enums.VerdictType;
+import com.ttegeoji.backend.jobs.JobKind;
 import com.ttegeoji.backend.repository.PostRoomRepository;
 import com.ttegeoji.backend.repository.VoteRepository;
 import com.ttegeoji.backend.support.PostgresContainerSupport;
@@ -110,7 +111,7 @@ class VerdictConfirmationServiceTest extends PostgresContainerSupport {
                 "verdict_id", v.get("id").toString(), "verdict_version", 1, "post_id", post.toString()));
         assertThat(instant(v.get("deadline_at")))
                 .isEqualTo(instant(job.get("deadline_at")))
-                .isEqualTo(dbNowPlus(10).toInstant());
+                .isEqualTo(dbNowPlus(JobKind.SENTENCE.deadlineAfterSeconds()).toInstant());
     }
 
     @Test
