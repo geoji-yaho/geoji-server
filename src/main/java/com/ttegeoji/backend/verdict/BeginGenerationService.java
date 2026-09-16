@@ -57,15 +57,17 @@ public class BeginGenerationService {
 
     @Transactional
     public Response begin(UUID verdictId, Request request) {
-        UUID postId = generationQueries.findPostId(verdictId).orElseThrow(BeginGenerationService::notFound);
-        privacyEpochRepository.lockAndRead(generationQueries.scopeKeys(postId));
+        GenerationQueries.CaseScope scope = generationQueries.caseScope(verdictId)
+                .orElseThrow(BeginGenerationService::notFound);
+        privacyEpochRepository.lockAndRead(scope.scopeKeys());
         Verdict verdict = verdictRepository.findByIdForUpdate(verdictId).orElseThrow(BeginGenerationService::notFound);
 
         List<UUID> jobIds = new ArrayList<>(List.of(request.jobId()));
         if (verdict.getActiveJobId() != null) {
             jobIds.add(verdict.getActiveJobId());
         }
-        List<GenerationQueries.LockedJob> jobs = generationQueries.lockJobs(jobIds);
+        GenerationQueries.LockedJobs locked = generationQueries.lockJobsWithNow(jobIds);
+        List<GenerationQueries.LockedJob> jobs = locked.jobs();
         GenerationQueries.LockedJob requester = find(jobs, request.jobId());
 
         if (request.verdictVersion() != verdict.getVerdictVersion().intValue()
@@ -92,7 +94,8 @@ public class BeginGenerationService {
             if (requester.kind() != JobKind.SENTENCE) {
                 throw stale();
             }
-            if (verdict.getDeadlineAt() != null && !generationQueries.dbNow().isBefore(verdict.getDeadlineAt())) {
+            // requester 가 있으니 job 행을 잠갔고 dbNow 도 왔다(lockJobsWithNow)
+            if (verdict.getDeadlineAt() != null && !locked.dbNow().isBefore(verdict.getDeadlineAt())) {
                 throw new InternalApiException(HttpStatus.CONFLICT, DEADLINE_EXCEEDED);
             }
             fixed = null;

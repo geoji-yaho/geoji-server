@@ -7,6 +7,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -37,6 +39,37 @@ public class GenerationQueries {
 
     private final JdbcTemplate jdbcTemplate;
 
+    /** 사건의 post_id 와 privacy scope key 를 한 번에. verdict 가 없으면 빈 결과(404) */
+    public record CaseScope(UUID postId, List<String> scopeKeys) {
+    }
+
+    /**
+     * {@link #findPostId}+{@link #scopeKeys} 를 한 문장으로 합친 것. 세 번 왕복하면 DB 가 다른 리전이라
+     * begin-generation 1초 예산(10 §4.7)을 못 지킨다. 잠그지 않는다 — 잠금은 lockAndRead 부터다.
+     */
+    public Optional<CaseScope> caseScope(UUID verdictId) {
+        List<String> keys = new ArrayList<>();
+        UUID[] postId = new UUID[1];
+        jdbcTemplate.query("""
+                SELECT v.post_id, p.author_id, pr.room_id
+                  FROM verdicts v
+                  JOIN posts p ON p.id = v.post_id
+                  LEFT JOIN post_rooms pr ON pr.post_id = v.post_id
+                 WHERE v.id = ?
+                """, rs -> {
+            if (postId[0] == null) {
+                postId[0] = rs.getObject("post_id", UUID.class);
+                keys.add(ScopeKeys.post(postId[0]));
+                keys.add(ScopeKeys.user(rs.getObject("author_id", UUID.class)));
+            }
+            UUID roomId = rs.getObject("room_id", UUID.class);
+            if (roomId != null) {
+                keys.add(ScopeKeys.room(roomId));
+            }
+        }, verdictId);
+        return postId[0] == null ? Optional.empty() : Optional.of(new CaseScope(postId[0], keys));
+    }
+
     /** 잠그지 않고 post_id 만 읽는다. scope key 를 verdict 잠금보다 먼저 알아야 해서 따로 읽는다. 없으면 빈 결과(404). */
     public Optional<UUID> findPostId(UUID verdictId) {
         return jdbcTemplate.query("SELECT post_id FROM verdicts WHERE id = ?",
@@ -63,13 +96,23 @@ public class GenerationQueries {
      * 없는 id 는 결과에 없다.
      */
     public List<LockedJob> lockJobs(Collection<UUID> jobIds) {
+        return lockJobsWithNow(jobIds).jobs();
+    }
+
+    /** 잠근 job 과 같은 트랜잭션의 DB now(). now() 만 따로 읽으면 왕복이 하나 더 늘어서 함께 가져온다. */
+    public record LockedJobs(List<LockedJob> jobs, OffsetDateTime dbNow) {
+    }
+
+    /** {@link #lockJobs} + DB now(). 잠근 행이 없으면 dbNow 는 null 이다. */
+    public LockedJobs lockJobsWithNow(Collection<UUID> jobIds) {
         UUID[] ids = jobIds.stream().distinct().toArray(UUID[]::new);
         if (ids.length == 0) {
-            return List.of();
+            return new LockedJobs(List.of(), null);
         }
-        return jdbcTemplate.query(con -> {
+        OffsetDateTime[] now = new OffsetDateTime[1];
+        List<LockedJob> jobs = jdbcTemplate.query(con -> {
             PreparedStatement ps = con.prepareStatement("""
-                    SELECT id, kind, aggregate_id, status, generation_id, deadline_at,
+                    SELECT id, kind, aggregate_id, status, generation_id, deadline_at, now() AS db_now,
                            (status = 'RUNNING' AND lease_until > now()) AS lease_valid
                       FROM ai.jobs
                      WHERE id = ANY (?)
@@ -78,14 +121,22 @@ public class GenerationQueries {
                     """);
             ps.setArray(1, con.createArrayOf("uuid", ids));
             return ps;
-        }, (rs, i) -> new LockedJob(
+        }, (rs, i) -> {
+            now[0] = rs.getObject("db_now", OffsetDateTime.class);
+            return newLockedJob(rs);
+        });
+        return new LockedJobs(jobs, now[0]);
+    }
+
+    private static LockedJob newLockedJob(ResultSet rs) throws SQLException {
+        return new LockedJob(
                 rs.getObject("id", UUID.class),
                 JobKind.valueOf(rs.getString("kind")),
                 rs.getString("aggregate_id"),
                 rs.getString("status"),
                 rs.getObject("generation_id", UUID.class),
                 rs.getObject("deadline_at", OffsetDateTime.class),
-                rs.getBoolean("lease_valid")));
+                rs.getBoolean("lease_valid"));
     }
 
     /** DB now(). 트랜잭션 시작 시각이라 한 트랜잭션 안에서는 같은 값이다. 마감 비교·예약 시각 계산에 쓴다. */

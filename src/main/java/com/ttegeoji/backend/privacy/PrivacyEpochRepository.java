@@ -20,8 +20,12 @@ import java.util.TreeMap;
 @RequiredArgsConstructor
 public class PrivacyEpochRepository {
 
-    private static final String ENSURE_ROW_SQL =
-            "INSERT INTO ai.privacy_epochs (scope_key) VALUES (?) ON CONFLICT (scope_key) DO NOTHING";
+    // key 하나에 왕복 하나씩 쓰면 DB 가 다른 리전이라 scope 수만큼 지연이 붙는다(begin-generation 은 1초 예산).
+    // 한 문장으로 넣되 ORDER BY 로 삽입 순서를 오름차순으로 묶어 교착 회피 성질은 그대로 둔다
+    private static final String ENSURE_ROWS_SQL = """
+            INSERT INTO ai.privacy_epochs (scope_key)
+            SELECT k FROM unnest(?) AS t(k) ORDER BY k COLLATE "C"
+            ON CONFLICT (scope_key) DO NOTHING""";
     // LockRows 가 Sort 위에 있어 정렬 순서대로 잠근다. COLLATE "C" 는 Java String 정렬과 같은 바이트 순서다
     private static final String LOCK_SQL =
             "SELECT scope_key, epoch FROM ai.privacy_epochs WHERE scope_key = ANY(?) ORDER BY scope_key COLLATE \"C\" FOR UPDATE";
@@ -45,9 +49,11 @@ public class PrivacyEpochRepository {
         if (keys.isEmpty()) {
             return new TreeMap<>();
         }
-        for (String key : keys) {
-            jdbcTemplate.update(ENSURE_ROW_SQL, key);
-        }
+        jdbcTemplate.update(connection -> {
+            PreparedStatement ps = connection.prepareStatement(ENSURE_ROWS_SQL);
+            ps.setArray(1, connection.createArrayOf("text", keys.toArray()));
+            return ps;
+        });
         return query(LOCK_SQL, keys);
     }
 
