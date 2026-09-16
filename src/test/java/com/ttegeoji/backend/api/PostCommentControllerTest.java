@@ -212,4 +212,37 @@ class PostCommentControllerTest extends PostgresContainerSupport {
         assertThat(jdbc.queryForObject("SELECT deleted_at IS NULL FROM post_comments WHERE id = CAST(? AS uuid)",
                 Boolean.class, comment)).isTrue();
     }
+
+    @Test
+    @DisplayName("room_id 를 주면 그 방 댓글만. 작성자도 다른 방 댓글은 못 본다")
+    void roomScopedListHidesOtherRooms() throws Exception {
+        UUID otherRoom = f.room(author, "hell");
+        f.member(otherRoom, author);
+        UUID otherMember = f.profile();
+        f.member(otherRoom, otherMember);
+        f.share(post, otherRoom);
+        write(post, member, room, "이 방 댓글").andExpect(status().isCreated());
+        write(post, otherMember, otherRoom, "딴 방 댓글").andExpect(status().isCreated());
+
+        mockMvc.perform(get(url(post) + "?room_id=" + room).with(as(author)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].content").value("이 방 댓글"));
+
+        mockMvc.perform(get(url(post) + "?room_id=" + otherRoom).with(as(author)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].content").value("딴 방 댓글"));
+    }
+
+    @Test
+    @DisplayName("멤버가 아닌 방의 room_id 로 조회하면 404")
+    void roomScopedListRejectsNonMember() throws Exception {
+        UUID otherRoom = f.room(author, "hell");
+        f.member(otherRoom, author);
+        f.share(post, otherRoom);
+
+        mockMvc.perform(get(url(post) + "?room_id=" + otherRoom).with(as(member)))
+                .andExpect(status().isNotFound());
+    }
 }

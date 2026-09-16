@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -27,9 +28,10 @@ public class PostCommentController {
     private final PostCommentService commentService;
 
     @GetMapping("/api/posts/{postId}/comments")
-    public ResponseEntity<?> list(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID postId) {
+    public ResponseEntity<?> list(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID postId,
+                                 @RequestParam(name = "room_id", required = false) UUID roomId) {
         try {
-            return ResponseEntity.ok(commentService.list(postId, CurrentUser.idOf(jwt)));
+            return ResponseEntity.ok(commentService.list(postId, CurrentUser.idOf(jwt), roomId));
         } catch (PublicApiRejection e) {
             return rejection(e);
         }

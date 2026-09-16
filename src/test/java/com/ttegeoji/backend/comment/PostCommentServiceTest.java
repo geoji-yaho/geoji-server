@@ -248,15 +248,15 @@ class PostCommentServiceTest extends PostgresContainerSupport {
         service.delete(post, UUID.fromString(deleted), member);
         f.revoke(post, roomC);
 
-        assertThat(service.list(post, author)).extracting(PostCommentResponse::id).containsExactly(a1, b1, a2);
+        assertThat(service.list(post, author, null)).extracting(PostCommentResponse::id).containsExactly(a1, b1, a2);
         // member 는 room 과 roomC 멤버지만 roomC 는 철회됐다
-        assertThat(service.list(post, member)).extracting(PostCommentResponse::id).containsExactly(a1, a2);
-        assertThat(service.list(post, memberB)).extracting(PostCommentResponse::id).containsExactly(b1);
-        assertThat(service.list(post, member).getFirst().nickname()).isEqualTo("배심원");
+        assertThat(service.list(post, member, null)).extracting(PostCommentResponse::id).containsExactly(a1, a2);
+        assertThat(service.list(post, memberB, null)).extracting(PostCommentResponse::id).containsExactly(b1);
+        assertThat(service.list(post, member, null).getFirst().nickname()).isEqualTo("배심원");
         // 철회된 방에만 속한 사람은 게시물을 볼 수 없다
-        assertRejected(() -> service.list(post, memberC), HttpStatus.NOT_FOUND);
-        assertRejected(() -> service.list(post, outsider), HttpStatus.NOT_FOUND);
-        assertRejected(() -> service.list(UUID.randomUUID(), author), HttpStatus.NOT_FOUND);
+        assertRejected(() -> service.list(post, memberC, null), HttpStatus.NOT_FOUND);
+        assertRejected(() -> service.list(post, outsider, null), HttpStatus.NOT_FOUND);
+        assertRejected(() -> service.list(UUID.randomUUID(), author, null), HttpStatus.NOT_FOUND);
         assertThat(c1).isNotNull();
     }
 
@@ -339,7 +339,7 @@ class PostCommentServiceTest extends PostgresContainerSupport {
     void ownerDeletesAfterRevoke() {
         UUID commentId = UUID.fromString(create(member, room, "철회 뒤 지움").id());
         f.revoke(post, room);
-        assertRejected(() -> service.list(post, member), HttpStatus.NOT_FOUND);
+        assertRejected(() -> service.list(post, member, null), HttpStatus.NOT_FOUND);
 
         service.delete(post, commentId, member);
 
