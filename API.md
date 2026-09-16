@@ -782,6 +782,87 @@ AI 판사가 형량·판결문을 만든다(최대 약 40초, 늦으면 템플�
 - 요청·응답 JSON 은 camelCase. 값이 없는 필드도 키는 `null` 로 온다
 - 전달은 폴링만 한다. Realtime·SSE 는 없다
 
+### `GET /api/posts/{postId}`
+
+게시물 한 건. 투표 화면(S-14)과 판결 화면(S-10)의 사건 개요·배심원 집계가 이것을 쓴다.
+판결문·형량·짤은 여기 없다. 그것은 `GET /api/posts/{postId}/verdict` 가 준다.
+
+**Response `200`**
+```json
+{
+  "id": "3c9a1e7b-5d2f-4b8a-9e6c-1a2b3c4d5e6f",
+  "postType": "spent",
+  "amountKrw": 23000,
+  "category": "교통/택시",
+  "item": "심야 택시",
+  "reason": "막차 놓쳐서",
+  "authorId": "1a2b…",
+  "authorNickname": "규민",
+  "voteDeadlineAt": "2026-09-15T12:33:00Z",
+  "createdAt": "2026-09-15T12:03:00Z",
+  "rooms": [{ "id": "6a1f…", "name": "야근족 거지방", "spiceLevel": "spicy" }],
+  "juryStatus": "guilty",
+  "tally": { "oppose": 2, "support": 1 },
+  "votes": [
+    { "id": "0b8e…", "voterId": "9d1f…", "voterNickname": "지민",
+      "verdict": "guilty", "reason": "지하철이 있었잖아요", "createdAt": "2026-09-15T12:10:00Z" }
+  ],
+  "myVote": null,
+  "canVote": false,
+  "eligibleVoterCount": 3
+}
+```
+
+| 필드 | 내용 |
+|---|---|
+| `rooms` | 공유가 철회되지 않은 방만. 삭제된 방은 빠진다 |
+| `juryStatus` | 평결. 아직 투표 중이면 `null` |
+| `tally.oppose` | 유죄·기각 표 수. `tally.support` 는 무죄·동의 표 수 |
+| `votes[].reason` | **평결 확정 전에는 `null`**. 확정 전에 남의 사유가 보이면 표가 쏠린다 |
+| `myVote` | 내 표. 아직 안 했으면 `null` |
+| `canVote` | 작성자가 아니고, 아직 투표하지 않았고, 평결이 확정되지 않았으면 `true` |
+| `eligibleVoterCount` | 투표 가능 인원(철회되지 않은 공유 방 멤버 합집합 − 작성자) |
+
+**오류**
+
+| 상황 | 상태 코드 | 바디 |
+|---|---|---|
+| 게시물 없음·삭제됨·볼 수 없는 사람 | 404 | `{ "message": "게시물을 찾을 수 없습니다." }` |
+| JWT 없음 | 401 | - |
+
+### `GET /api/rooms/{roomId}/posts`
+
+방 피드(S-06). 최신 글이 위고 최대 100건이다. 철회된 공유와 삭제된 글은 빠진다.
+
+**Response `200`**
+```json
+[
+  {
+    "id": "3c9a1e7b-5d2f-4b8a-9e6c-1a2b3c4d5e6f",
+    "postType": "spent",
+    "amountKrw": 23000,
+    "category": "교통/택시",
+    "item": "심야 택시",
+    "authorId": "1a2b…",
+    "authorNickname": "규민",
+    "voteDeadlineAt": "2026-09-15T12:33:00Z",
+    "createdAt": "2026-09-15T12:03:00Z",
+    "juryStatus": null,
+    "tally": { "oppose": 1, "support": 0 },
+    "voted": true
+  }
+]
+```
+
+- `voted` 는 요청자가 그 게시물에 투표했는지다
+
+**오류**
+
+| 상황 | 상태 코드 | 바디 |
+|---|---|---|
+| 방이 없거나 요청자가 멤버가 아님 | 404 | `{ "message": "방을 찾을 수 없습니다." }` |
+| JWT 없음 | 401 | - |
+
 ### `POST /api/posts/{postId}/votes`
 
 배심원 투표. S-14 화면에서 호출한다. 게시물당 1인 1표이고 수정할 수 없다. 작성자는 투표하지 않는다.
