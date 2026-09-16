@@ -245,4 +245,36 @@ class PostCommentControllerTest extends PostgresContainerSupport {
         mockMvc.perform(get(url(post) + "?room_id=" + otherRoom).with(as(member)))
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    @DisplayName("9/16 A 방만 판결이 확정돼도 B 방 댓글은 RETAIN 에 들어가지 않는다")
+    void retainFollowsTheRoomVerdict() throws Exception {
+        UUID otherRoom = f.room(author, "hell");
+        f.member(otherRoom, author);
+        UUID otherMember = f.profile();
+        f.member(otherRoom, otherMember);
+        f.share(post, otherRoom);
+        // 이 방(room)만 판결 확정
+        jdbc.update("""
+                INSERT INTO verdicts (post_id, room_id, jury_result, policy_snapshot, confirmed_at,
+                                      target_intensities, default_intensity, sentence_status)
+                VALUES (?, ?, 'guilty', '{}'::jsonb, now(), '["mild"]'::jsonb, 'mild', 'FINAL')""", post, room);
+
+        String judged = idOf(write(post, member, room, "확정된 방 댓글"));
+        String notJudged = idOf(write(post, otherMember, otherRoom, "아직 투표 중인 방 댓글"));
+
+        assertThat(retained(judged)).isTrue();
+        assertThat(retained(notJudged)).isFalse();
+    }
+
+    private String idOf(org.springframework.test.web.servlet.ResultActions created) throws Exception {
+        String body = created.andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        return (String) JSON.readValue(body, Map.class).get("id");
+    }
+
+    private boolean retained(String commentId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT retained_at IS NOT NULL FROM post_comments WHERE id = ?", Boolean.class,
+                UUID.fromString(commentId)));
+    }
 }

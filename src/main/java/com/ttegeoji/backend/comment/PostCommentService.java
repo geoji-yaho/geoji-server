@@ -73,7 +73,7 @@ public class PostCommentService {
         }
 
         InsertedComment inserted = queries.insert(postId, roomId, userId, content);
-        if (queries.isJudged(postId)) {
+        if (queries.isJudged(postId, roomId)) {
             // 확정 전 댓글은 retained_at NULL 로 남기고 CommentRetainScheduler 가 확정 뒤 넣는다
             jobEnqueuer.enqueueRetainComment(inserted.id().toString(), inserted.version());
             queries.markRetained(inserted.id());

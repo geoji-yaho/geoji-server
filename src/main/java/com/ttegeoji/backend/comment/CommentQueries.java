@@ -18,12 +18,22 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class CommentQueries {
 
-    // 판결 확정(JUDGED): verdict FINAL 이고 각하가 아니고 게시물이 삭제되지 않음. p 는 posts 별칭
-    private static final String JUDGED = """
+    /**
+     * 판결 확정(JUDGED): 그 방 판결이 FINAL 이고 각하가 아니고 게시물이 삭제되지 않음. p 는 posts 별칭이다.
+     *
+     * <p>{@code %s} 에는 "댓글이 달린 방" 을 가리키는 식이 들어간다. 판결은 방마다 따로 나므로
+     * post_id 만 보면 <b>A 방에서만 확정돼도 B 방 댓글이 열린다</b>. 옛 합산 판결(room_id NULL)은
+     * 방 구분이 없어 그대로 인정한다.
+     */
+    private static final String JUDGED_FOR_ROOM = """
             p.deleted_at IS NULL
             AND EXISTS (SELECT 1 FROM verdicts v
                          WHERE v.post_id = p.id AND v.sentence_status = 'FINAL'
-                           AND v.jury_result <> CAST('dismissed' AS verdict))""";
+                           AND v.jury_result <> CAST('dismissed' AS verdict)
+                           AND (v.room_id = %s OR v.room_id IS NULL))""";
+
+    /** 댓글 행(c)의 방 기준 */
+    private static final String JUDGED = JUDGED_FOR_ROOM.formatted("c.room_id");
 
     public record PostRow(UUID id, UUID authorId, boolean deleted) {
     }
@@ -78,9 +88,12 @@ public class CommentQueries {
                 Boolean.class, postId, userId));
     }
 
-    public boolean isJudged(UUID postId) {
+    /** 그 방 재판이 끝났는가. 끝났으면 새 댓글을 바로 RETAIN 에 넣는다 */
+    public boolean isJudged(UUID postId, UUID roomId) {
         return Boolean.TRUE.equals(jdbc.queryForObject(
-                "SELECT EXISTS (SELECT 1 FROM posts p WHERE p.id = ? AND " + JUDGED + ")", Boolean.class, postId));
+                "SELECT EXISTS (SELECT 1 FROM posts p WHERE p.id = ? AND "
+                        + JUDGED_FOR_ROOM.formatted("CAST(? AS uuid)") + ")",
+                Boolean.class, postId, roomId));
     }
 
     public InsertedComment insert(UUID postId, UUID roomId, UUID userId, String content) {
