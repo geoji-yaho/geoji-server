@@ -45,8 +45,10 @@ public class AiTraceClient {
     }
 
     private static JdkClientHttpRequestFactory requestFactory() {
+        // 10 §16.6-5: h2c 업그레이드 호환 문제로 HTTP/1.1 고정
         HttpClient httpClient = HttpClient.newBuilder()
                 .connectTimeout(CONNECT_TIMEOUT)
+                .version(HttpClient.Version.HTTP_1_1)
                 .build();
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
         factory.setReadTimeout(READ_TIMEOUT);

@@ -22,6 +22,8 @@ public class AiApiClientConfig {
     public RestClient aiApiRestClient(GeojiProperties properties) {
         HttpClient httpClient = HttpClient.newBuilder()
                 .connectTimeout(CONNECT_TIMEOUT)
+                // 10 §16.6-5: HTTP/2 업그레이드(h2c)를 시도하면 AI API(Uvicorn)가 요청을 잘못 파싱해 422 가 난다
+                .version(HttpClient.Version.HTTP_1_1)
                 .build();
         RestClient.Builder builder = RestClient.builder()
                 .requestFactory(new JdkClientHttpRequestFactory(httpClient));
