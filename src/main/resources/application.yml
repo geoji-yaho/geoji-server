@@ -14,7 +14,10 @@ spring:
       ddl-auto: validate
     properties:
       hibernate:
-        format_sql: true
+        # 운영에서는 끈다. 내부 API 는 예산이 1~3초라(10 §4.7) 문장마다 포맷·기록하는 비용이 그대로 얹힌다.
+        # 로컬에서 보고 싶으면 SHOW_SQL=true 로 띄운다
+        format_sql: ${SHOW_SQL:false}
+    show-sql: ${SHOW_SQL:false}
 
   security:
     oauth2:
@@ -36,4 +39,4 @@ geoji:
 
 logging:
   level:
-    org.hibernate.SQL: debug
+    org.hibernate.SQL: ${SQL_LOG_LEVEL:info}

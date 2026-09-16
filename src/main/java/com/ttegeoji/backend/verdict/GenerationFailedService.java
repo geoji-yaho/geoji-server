@@ -60,8 +60,8 @@ public class GenerationFailedService {
         if (!IMMEDIATE_FALLBACK_CODES.contains(code) && !ROUND_RETRY_CODES.contains(code)) {
             throw new InternalApiException(HttpStatus.UNPROCESSABLE_CONTENT, INVALID_REQUEST);
         }
-        UUID postId = generationQueries.findPostId(verdictId).orElseThrow(BeginGenerationService::notFound);
-        privacyEpochRepository.lockAndRead(generationQueries.scopeKeys(postId));
+        privacyEpochRepository.lockAndRead(generationQueries.caseScope(verdictId)
+                .orElseThrow(BeginGenerationService::notFound).scopeKeys());
         Verdict verdict = verdictRepository.findByIdForUpdate(verdictId).orElseThrow(BeginGenerationService::notFound);
 
         if (request.generationId().equals(verdict.getLastFailedGenerationId()) && code.equals(verdict.getLastFailedCode())) {
