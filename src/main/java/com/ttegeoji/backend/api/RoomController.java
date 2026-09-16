@@ -31,6 +31,20 @@ public class RoomController {
 
     private final RoomRepository roomRepository;
     private final RoomMemberRepository roomMemberRepository;
+
+    /**
+     * 한 사람이 들어갈 수 있는 방 수(9/17 사용자 결정). 재판이 방마다 따로 돌아가므로 게시물 하나가
+     * 방 수만큼 AI 를 부른다 — 방 3개면 판결도 3건, 토큰도 3배다. 그 비용을 여기서 막는다.
+     * 삭제된 방은 세지 않으므로 방을 지우면 자리가 다시 생긴다.
+     */
+    static final int MAX_ROOMS_PER_USER = 3;
+
+    private void checkRoomLimit(UUID userId) {
+        if (roomMemberRepository.countActiveRoomsOfUser(userId) >= MAX_ROOMS_PER_USER) {
+            throw new IllegalStateException(
+                    "방은 최대 " + MAX_ROOMS_PER_USER + "개까지 참여할 수 있습니다. 쓰지 않는 방에서 나간 뒤 다시 시도해 주세요.");
+        }
+    }
     private final ProfileRepository profileRepository;
 
     // 홈 화면(S-03)의 "방 0개 빈 상태" / 방 목록은 여기서 온다 — 내가 멤버인, 삭제되지 않은 방들만.
@@ -51,6 +65,7 @@ public class RoomController {
             @AuthenticationPrincipal Jwt jwt,
             @Valid @RequestBody CreateRoomRequest request) {
         UUID userId = CurrentUser.idOf(jwt);
+        checkRoomLimit(userId);
 
         Room room = Room.builder()
                 .name(request.name())
@@ -111,7 +126,9 @@ public class RoomController {
                 .filter(r -> r.getDeletedAt() == null)
                 .orElseThrow(() -> new IllegalArgumentException("유효하지 않은 초대 코드입니다."));
 
+        // 이미 멤버면 상한과 무관하게 그대로 통과시킨다(재입장이 아니라 방 정보 조회에 가깝다)
         if (!roomMemberRepository.existsById_RoomIdAndId_UserId(room.getId(), userId)) {
+            checkRoomLimit(userId);
             roomMemberRepository.save(RoomMember.of(room.getId(), userId));
         }
 
