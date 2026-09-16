@@ -6,6 +6,7 @@ import com.ttegeoji.backend.dto.RoomMemberResponse;
 import com.ttegeoji.backend.repository.ProfileRepository;
 import com.ttegeoji.backend.repository.RoomMemberRepository;
 import com.ttegeoji.backend.security.CurrentUser;
+import com.ttegeoji.backend.verdictview.DebtScoreQueries;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -33,10 +34,13 @@ public class RoomMemberController {
 
     private final RoomMemberRepository roomMemberRepository;
     private final ProfileRepository profileRepository;
+    private final DebtScoreQueries debtScoreQueries;
 
     @GetMapping
     public ResponseEntity<List<RoomMemberResponse>> list(@PathVariable UUID roomId) {
         List<RoomMember> members = roomMemberRepository.findById_RoomId(roomId);
+
+        Map<UUID, BigDecimal> scores = debtScoreQueries.forRoom(roomId);
 
         List<UUID> userIds = members.stream().map(m -> m.getId().getUserId()).toList();
         Map<UUID, Profile> profilesById = profileRepository.findAllById(userIds).stream()
@@ -49,10 +53,10 @@ public class RoomMemberController {
                             m.getId().getUserId(),
                             profile != null ? profile.getNickname() : null,
                             profile != null ? profile.getAvatarUrl() : null,
-                            m.getDebtScore(),
+                            scores.get(m.getId().getUserId()),
                             m.getJoinedAt());
                 })
-                // 거지력 높은 순. null(아직 배치가 안 돈 멤버)은 맨 뒤로 보낸다.
+                // 거지력 높은 순. null(예산을 아직 안 정한 멤버)은 맨 뒤로 보낸다.
                 .sorted(Comparator.comparing(RoomMemberResponse::debtScore,
                         Comparator.nullsLast(Comparator.<BigDecimal>reverseOrder())))
                 .toList();
