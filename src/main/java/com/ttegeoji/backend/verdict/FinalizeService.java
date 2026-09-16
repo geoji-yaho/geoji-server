@@ -9,6 +9,7 @@ import com.ttegeoji.backend.domain.enums.Sentence;
 import com.ttegeoji.backend.domain.enums.SentenceStatus;
 import com.ttegeoji.backend.domain.enums.SpiceLevel;
 import com.ttegeoji.backend.domain.enums.TextStatus;
+import com.ttegeoji.backend.domain.enums.VerdictType;
 import com.ttegeoji.backend.jobs.JobEnqueuer;
 import com.ttegeoji.backend.jobs.JobKind;
 import com.ttegeoji.backend.privacy.PrivacyEpochRepository;
@@ -158,14 +159,21 @@ public class FinalizeService {
         List<SpiceLevel> targets = targetIntensities(verdict);
         Map<String, UUID> evidenceByLabel = validate(request, verdict, firstFix, targets, postId, dossier);
 
-        // 8. 형량
+        // 8. 형량. 비유죄(notGuilty·agree·disagree)는 형량이 없어 sentencing 이 null 로 온다(10 §16.6-3)
         if (firstFix) {
             var sentencing = request.sentencing();
             verdict.setSentenceStatus(SentenceStatus.FINAL);
-            verdict.setSentence(Sentence.valueOf(sentencing.sentence()));
-            verdict.setSentenceSource(ContentSource.AI);
-            verdict.setSentencingReason(sentencing.sentencingReason());
-            verdict.setReasonSource(ContentSource.valueOf(sentencing.reasonSource()));
+            if (sentencing == null) {
+                verdict.setSentence(null);
+                verdict.setSentenceSource(null);
+                verdict.setSentencingReason(null);
+                verdict.setReasonSource(null);
+            } else {
+                verdict.setSentence(Sentence.valueOf(sentencing.sentence()));
+                verdict.setSentenceSource(ContentSource.AI);
+                verdict.setSentencingReason(sentencing.sentencingReason());
+                verdict.setReasonSource(ContentSource.valueOf(sentencing.reasonSource()));
+            }
         }
 
         // 9. 받은 강도 행을 새 text_version 으로. 나머지 강도 행은 그대로(TEXT_RETRY ⊆, 9/14 채택)
@@ -268,7 +276,12 @@ public class FinalizeService {
 
         // 형량: 최초는 DB 허용 목록 안, FINAL 이면 기존 형량·이유와 같아야 한다(D-19)
         var sentencing = request.sentencing();
-        if (firstFix) {
+        if (firstFix && verdict.getJuryResult() != VerdictType.guilty) {
+            // 비유죄는 형량이 없다. sentencing 을 보내오면 계약 위반이라 거부한다(10 §16.6-3)
+            if (sentencing != null) {
+                throw FinalizeRequestParser.invalid();
+            }
+        } else if (firstFix) {
             JsonNode policy = readJson(verdict.getPolicySnapshot());
             Set<String> allowed = new LinkedHashSet<>();
             policy.path("allowed_sentences").values().forEach(item -> allowed.add(item.path("code").asString("")));
