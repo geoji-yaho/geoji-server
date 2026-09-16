@@ -64,7 +64,7 @@ class PostReadControllerTest extends PostgresContainerSupport {
     @Test
     @DisplayName("작성자가 자기 게시물을 본다 → 사건 개요·공유 방·투표 가능 인원")
     void authorSeesDetail() throws Exception {
-        mockMvc.perform(get("/api/posts/" + post).with(as(author)))
+        mockMvc.perform(get("/api/posts/" + post + "?room_id=" + room).with(as(author)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(post.toString()))
                 .andExpect(jsonPath("$.postType").value("spent"))
@@ -83,7 +83,7 @@ class PostReadControllerTest extends PostgresContainerSupport {
     @Test
     @DisplayName("공유 방 멤버는 투표할 수 있다 → canVote=true, 아직 표가 없으면 집계 0")
     void memberCanVote() throws Exception {
-        mockMvc.perform(get("/api/posts/" + post).with(as(juror)))
+        mockMvc.perform(get("/api/posts/" + post + "?room_id=" + room).with(as(juror)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.canVote").value(true))
                 .andExpect(jsonPath("$.myVote").doesNotExist())
@@ -96,7 +96,7 @@ class PostReadControllerTest extends PostgresContainerSupport {
     void hidesReasonsBeforeVerdict() throws Exception {
         vote(juror, "guilty", "지하철이 있었잖아요");
 
-        mockMvc.perform(get("/api/posts/" + post).with(as(author)))
+        mockMvc.perform(get("/api/posts/" + post + "?room_id=" + room).with(as(author)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.tally.oppose").value(1))
                 .andExpect(jsonPath("$.votes[0].voterNickname").value("배심원"))
@@ -110,7 +110,7 @@ class PostReadControllerTest extends PostgresContainerSupport {
         vote(juror, "guilty", "지하철이 있었잖아요");
         f.verdict(post, "guilty", "FINAL", "oneDay", "이유", "AI_READY", 1, "spicy");
 
-        mockMvc.perform(get("/api/posts/" + post).with(as(author)))
+        mockMvc.perform(get("/api/posts/" + post + "?room_id=" + room).with(as(author)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.juryStatus").value("guilty"))
                 .andExpect(jsonPath("$.votes[0].reason").value("지하철이 있었잖아요"))
@@ -122,7 +122,7 @@ class PostReadControllerTest extends PostgresContainerSupport {
     void myVoteIsReturned() throws Exception {
         vote(juror, "notGuilty", "그럴 수 있죠");
 
-        mockMvc.perform(get("/api/posts/" + post).with(as(juror)))
+        mockMvc.perform(get("/api/posts/" + post + "?room_id=" + room).with(as(juror)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.myVote.verdict").value("notGuilty"))
                 .andExpect(jsonPath("$.canVote").value(false))
@@ -132,7 +132,7 @@ class PostReadControllerTest extends PostgresContainerSupport {
     @Test
     @DisplayName("공유 방 멤버가 아니면 404. 없는 글과 구분하지 않는다")
     void strangerGets404() throws Exception {
-        mockMvc.perform(get("/api/posts/" + post).with(as(stranger)))
+        mockMvc.perform(get("/api/posts/" + post + "?room_id=" + room).with(as(stranger)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.message").value("게시물을 찾을 수 없습니다."));
     }
@@ -142,7 +142,7 @@ class PostReadControllerTest extends PostgresContainerSupport {
     void deletedPostIs404() throws Exception {
         jdbc.update("UPDATE posts SET deleted_at = now() WHERE id = ?", post);
 
-        mockMvc.perform(get("/api/posts/" + post).with(as(author)))
+        mockMvc.perform(get("/api/posts/" + post + "?room_id=" + room).with(as(author)))
                 .andExpect(status().isNotFound());
     }
 
@@ -151,7 +151,7 @@ class PostReadControllerTest extends PostgresContainerSupport {
     void revokedShareHidesPost() throws Exception {
         f.revoke(post, room);
 
-        mockMvc.perform(get("/api/posts/" + post).with(as(juror)))
+        mockMvc.perform(get("/api/posts/" + post + "?room_id=" + room).with(as(juror)))
                 .andExpect(status().isNotFound());
     }
 
@@ -197,7 +197,7 @@ class PostReadControllerTest extends PostgresContainerSupport {
     }
 
     @Test
-    @DisplayName("같은 방이 아닌 사람의 표는 보이지 않는다. 집계 숫자는 그대로다")
+    @DisplayName("9/16 다른 방 표는 보이지도, 집계에 들어가지도 않는다 — 방마다 따로 재판한다")
     void votesFromOtherRoomsAreHidden() throws Exception {
         UUID otherRoom = f.room(author, "mild");
         f.member(otherRoom, author);
@@ -210,17 +210,18 @@ class PostReadControllerTest extends PostgresContainerSupport {
                 VALUES (?, ?, ?, CAST('guilty' AS verdict), '딴 방에서 쓴 사유')""", post, outsider, otherRoom);
         vote(juror, "notGuilty", "같은 방 사유");
 
-        mockMvc.perform(get("/api/posts/" + post).with(as(juror)))
+        mockMvc.perform(get("/api/posts/" + post + "?room_id=" + room).with(as(juror)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.tally.oppose").value(1))
+                // 딴 방에서 들어온 유죄 표는 이 방 집계에 없다
+                .andExpect(jsonPath("$.tally.oppose").value(0))
                 .andExpect(jsonPath("$.tally.support").value(1))
                 .andExpect(jsonPath("$.votes.length()").value(1))
                 .andExpect(jsonPath("$.votes[0].voterNickname").value("배심원"));
     }
 
     @Test
-    @DisplayName("작성자는 모든 방의 표를 본다")
-    void authorSeesVotesFromEveryRoom() throws Exception {
+    @DisplayName("9/16 작성자도 보고 있는 방의 표만 본다")
+    void authorSeesOnlyTheRoomBeingViewed() throws Exception {
         UUID otherRoom = f.room(author, "mild");
         f.member(otherRoom, author);
         UUID outsider = f.profile();
@@ -231,8 +232,14 @@ class PostReadControllerTest extends PostgresContainerSupport {
                 VALUES (?, ?, ?, CAST('guilty' AS verdict), '딴 방에서 쓴 사유')""", post, outsider, otherRoom);
         vote(juror, "notGuilty", "같은 방 사유");
 
-        mockMvc.perform(get("/api/posts/" + post).with(as(author)))
+        mockMvc.perform(get("/api/posts/" + post + "?room_id=" + room).with(as(author)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.votes.length()").value(2));
+                .andExpect(jsonPath("$.votes.length()").value(1))
+                .andExpect(jsonPath("$.votes[0].voterNickname").value("배심원"));
+
+        // 다른 방을 보면 그 방 표가 나온다
+        mockMvc.perform(get("/api/posts/" + post + "?room_id=" + otherRoom).with(as(author)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.votes.length()").value(1));
     }
 }

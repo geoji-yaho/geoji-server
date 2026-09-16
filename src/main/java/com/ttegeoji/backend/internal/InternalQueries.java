@@ -32,7 +32,8 @@ public class InternalQueries {
     public record RoomRow(UUID id, String spiceLevel, int ruleVersion, List<String> rules, OffsetDateTime createdAt) {
     }
 
-    public record VerdictRow(UUID id, UUID postId, int verdictVersion, String juryResult, String policySnapshot,
+    public record VerdictRow(UUID id, UUID postId, UUID roomId, int verdictVersion, String juryResult,
+                             String policySnapshot,
                              OffsetDateTime confirmedAt, OffsetDateTime deadlineAt, String sentence,
                              String sentenceSource, String sentencingReason, String reasonSource,
                              String appliedIntensity, String targetIntensities, String defaultIntensity) {
@@ -63,6 +64,7 @@ public class InternalQueries {
     private static final RowMapper<VerdictRow> VERDICT_ROW = (rs, i) -> new VerdictRow(
             rs.getObject("id", UUID.class),
             rs.getObject("post_id", UUID.class),
+            rs.getObject("room_id", UUID.class),
             rs.getInt("verdict_version"),
             rs.getString("jury_result"),
             rs.getString("policy_snapshot"),
@@ -77,7 +79,7 @@ public class InternalQueries {
             rs.getString("default_intensity"));
 
     private static final String VERDICT_COLUMNS = """
-            id, post_id, verdict_version, jury_result::text AS jury_result, policy_snapshot::text AS policy_snapshot,
+            id, post_id, room_id, verdict_version, jury_result::text AS jury_result, policy_snapshot::text AS policy_snapshot,
             confirmed_at, deadline_at, sentence::text AS sentence, sentence_source, sentencing_reason, reason_source,
             applied_intensity::text AS applied_intensity, target_intensities::text AS target_intensities,
             default_intensity::text AS default_intensity
@@ -97,6 +99,19 @@ public class InternalQueries {
     }
 
     /** 게시물이 공유된 방. 만든 순서(같으면 id)로 정렬한다. */
+    /**
+     * 판결이 걸린 job(SENTENCE·TEXT_RETRY)의 스냅샷에 쓴다. 방마다 따로 재판하므로 그 방 하나만 넘겨야
+     * 판결문이 다른 방 규칙을 인용하지 않는다. 옛 합산 판결(roomId null)은 공유 방 전부를 준다.
+     */
+    public List<RoomRow> findSnapshotRooms(UUID postId, UUID roomId) {
+        return roomId == null ? findSharedRooms(postId) : jdbcTemplate.query("""
+                SELECT r.id, r.spice_level::text AS spice_level, r.rule_version, r.rules, r.created_at
+                  FROM post_rooms pr
+                  JOIN rooms r ON r.id = pr.room_id
+                 WHERE pr.post_id = ? AND pr.room_id = ? AND pr.revoked_at IS NULL
+                """, ROOM_ROW, postId, roomId);
+    }
+
     public List<RoomRow> findSharedRooms(UUID postId) {
         // 철회된 공유는 행을 남기고 revoked_at 으로 표시한다(feat-privacy 004b). 사건 방·후보 scope 가 모두 이 쿼리를 쓴다
         return jdbcTemplate.query("""
