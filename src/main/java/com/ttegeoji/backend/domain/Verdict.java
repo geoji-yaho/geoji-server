@@ -15,7 +15,7 @@ import org.hibernate.type.SqlTypes;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
-// 10 §2 verdicts. 게시물당 1건. 잠글 때는 privacy scope 행 뒤, job 행 앞(10 §2 잠금 순서)
+// 10 §2 verdicts. **방마다 1건**(9/16 사용자 결정, 10 §2·§5 이탈). 잠글 때는 privacy scope 행 뒤, job 행 앞(10 §2 잠금 순서)
 @Entity
 @Table(name = "verdicts")
 @Getter
@@ -29,8 +29,15 @@ public class Verdict {
     @UuidGenerator
     private UUID id;
 
-    @Column(name = "post_id", nullable = false, unique = true)
+    @Column(name = "post_id", nullable = false)
     private UUID postId;
+
+    /**
+     * 이 판결이 난 방. 게시물은 여러 방에 공유되지만 재판은 방마다 따로 한다.
+     * {@code null} 은 방별 재판 이전에 만들어진 옛 합산 판결이다(0017 마이그레이션).
+     */
+    @Column(name = "room_id")
+    private UUID roomId;
 
     // 업무 버전(SENTENCE dedupe·aggregate_version). JPA 낙관적 잠금 @Version 이 아니다
     @Builder.Default

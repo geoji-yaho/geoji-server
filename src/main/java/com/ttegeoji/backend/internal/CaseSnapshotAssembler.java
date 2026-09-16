@@ -118,7 +118,9 @@ public class CaseSnapshotAssembler {
 
     private CaseSnapshot build(CaseSource source) {
         PostRow post = source.post();
-        List<RoomRow> rooms = queries.findSharedRooms(post.id());
+        // 판결이 걸린 job 이면 그 방만 넘긴다. 판결문이 다른 방 규칙을 인용하지 않게 한다
+        List<RoomRow> rooms = queries.findSnapshotRooms(post.id(),
+                source.juryVerdict() == null ? null : source.juryVerdict().roomId());
 
         List<String> roomIds = rooms.stream().map(room -> room.id().toString()).toList();
         List<RoomSnapshot> roomSnapshots = rooms.stream()
