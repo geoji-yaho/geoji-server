@@ -1,6 +1,7 @@
 package com.ttegeoji.backend.verdict;
 
 import com.ttegeoji.backend.jobs.JobEnqueuer;
+import com.ttegeoji.backend.jobs.JobKind;
 import com.ttegeoji.backend.support.PostgresContainerSupport;
 import com.ttegeoji.backend.verdict.JuryQueries.PendingVerdict;
 import org.junit.jupiter.api.DisplayName;
@@ -36,13 +37,13 @@ class SentenceGateTest extends PostgresContainerSupport {
     private JdbcTemplate jdbc;
 
     @Test
-    @DisplayName("10 §3 D-24 PREPARE 없음 → 즉시 SENTENCE INSERT, job·verdict deadline_at = INSERT 시각 + 10s")
+    @DisplayName("10 §3 D-24 PREPARE 없음 → 즉시 SENTENCE INSERT, job·verdict deadline_at = INSERT 시각 + SENTENCE 마감")
     void noPrepareInsertsImmediately() {
         PendingVerdict verdict = insertVerdict("guilty", VALID_POLICY, "now()");
 
         assertThat(gate.tryInsert(verdict)).isTrue();
 
-        OffsetDateTime expected = dbNowPlus(10);
+        OffsetDateTime expected = dbNowPlus(JobKind.SENTENCE.deadlineAfterSeconds());
         assertThat(sentenceJobCount(verdict)).isEqualTo(1);
         assertThat(sentenceJobDeadline(verdict).toInstant()).isEqualTo(expected.toInstant());
         assertThat(verdictDeadline(verdict).toInstant()).isEqualTo(expected.toInstant());
@@ -91,12 +92,12 @@ class SentenceGateTest extends PostgresContainerSupport {
         assertThat(juryQueries.pendingVerdicts()).contains(verdict);
         assertThat(gate.tryInsert(verdict)).isTrue();
         assertThat(sentenceJobCount(verdict)).isEqualTo(1);
-        assertThat(verdictDeadline(verdict).toInstant()).isEqualTo(dbNowPlus(10).toInstant());
+        assertThat(verdictDeadline(verdict).toInstant()).isEqualTo(dbNowPlus(JobKind.SENTENCE.deadlineAfterSeconds()).toInstant());
         assertThat(juryQueries.pendingVerdicts()).doesNotContain(verdict);
     }
 
     @Test
-    @DisplayName("10 §3 D-24 PREPARE RUNNING 그대로 confirmed_at + 30s 경과 → INSERT, deadline = INSERT 시각 + 10s")
+    @DisplayName("10 §3 D-24 PREPARE RUNNING 그대로 confirmed_at + 30s 경과 → INSERT, deadline = INSERT 시각 + SENTENCE 마감")
     void waitOverInsertsEvenIfPrepareRunning() {
         PendingVerdict verdict = insertVerdict("guilty", VALID_POLICY, "now() - interval '29 seconds'");
         UUID prepare = insertPrepare(verdict.postId());
@@ -107,7 +108,7 @@ class SentenceGateTest extends PostgresContainerSupport {
 
         assertThat(gate.tryInsert(verdict)).isTrue();
         assertThat(sentenceJobCount(verdict)).isEqualTo(1);
-        assertThat(verdictDeadline(verdict).toInstant()).isEqualTo(dbNowPlus(10).toInstant());
+        assertThat(verdictDeadline(verdict).toInstant()).isEqualTo(dbNowPlus(JobKind.SENTENCE.deadlineAfterSeconds()).toInstant());
         assertThat(jdbc.queryForObject("SELECT status FROM ai.jobs WHERE id = ?", String.class, prepare))
                 .isEqualTo("RUNNING");
     }

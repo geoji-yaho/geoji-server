@@ -6,7 +6,10 @@ package com.ttegeoji.backend.jobs;
  */
 public enum JobKind {
     PREPARE(30, 2, null),
-    SENTENCE(100, 2, 10),
+    // 10 §3 D-24 는 10초지만 운영에서 그 예산으로는 AI 문구가 구조적으로 안 나온다. 워커의 노드 상한은
+    // min(노드 상한, 남은 마감)이라 writer(상한 6초)가 3초도 못 받고 잘린다. 실측 예산은
+    // begin 0.5 + prep 0.5 + sentencing 최대 3 + writer 최대 6 + finalize 1.5 ≈ 12초다(9/16, AI 파트 회신).
+    SENTENCE(100, 2, 25),
     RETAIN(10, 5, null),
     TEXT_RETRY(50, 1, 20);
 
