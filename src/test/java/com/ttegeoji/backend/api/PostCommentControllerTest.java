@@ -122,7 +122,7 @@ class PostCommentControllerTest extends PostgresContainerSupport {
         mockMvc.perform(delete(url(post) + "/" + second).with(as(author)))
                 .andExpect(status().isNoContent());
 
-        String body = mockMvc.perform(get(url(post)).with(as(member)))
+        String body = mockMvc.perform(get(url(post) + "?room_id=" + room).with(as(member)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[0].id").value(first))
@@ -143,7 +143,7 @@ class PostCommentControllerTest extends PostgresContainerSupport {
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.message").value("게시물을 찾을 수 없습니다."));
         write(missing, member, room, "없는 게시물")
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.message").exists());
-        mockMvc.perform(get(url(post)).with(as(outsider)))
+        mockMvc.perform(get(url(post) + "?room_id=" + room).with(as(outsider)))
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.message").exists());
         write(post, outsider, room, "남의 게시물")
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.message").exists());
@@ -156,7 +156,7 @@ class PostCommentControllerTest extends PostgresContainerSupport {
         f.share(post, otherRoom);
         jdbc.update("UPDATE posts SET deleted_at = now() WHERE id = ?", post);
 
-        mockMvc.perform(get(url(post)).with(as(member)))
+        mockMvc.perform(get(url(post) + "?room_id=" + room).with(as(member)))
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.message").exists());
         write(post, member, otherRoom, "삭제된 게시물")
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.message").exists());

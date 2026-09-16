@@ -227,7 +227,7 @@ class PostCommentServiceTest extends PostgresContainerSupport {
     }
 
     @Test
-    @DisplayName("SPEC 목록 — 작성자는 활성 공유 방 전체, 멤버는 자기 방 댓글만. 철회 방·삭제 댓글 제외, 오래된 순, 외부인 404(B-2 ①)")
+    @DisplayName("9/17 목록은 늘 방 단위 — 작성자도 그 방만. 철회 방·삭제 댓글 제외, 오래된 순, 외부인 404")
     void listVisibility() {
         UUID roomB = f.room(author);
         UUID memberB = f.profile("비방");
@@ -248,15 +248,20 @@ class PostCommentServiceTest extends PostgresContainerSupport {
         service.delete(post, UUID.fromString(deleted), member);
         f.revoke(post, roomC);
 
-        assertThat(service.list(post, author, null)).extracting(PostCommentResponse::id).containsExactly(a1, b1, a2);
-        // member 는 room 과 roomC 멤버지만 roomC 는 철회됐다
-        assertThat(service.list(post, member, null)).extracting(PostCommentResponse::id).containsExactly(a1, a2);
-        assertThat(service.list(post, memberB, null)).extracting(PostCommentResponse::id).containsExactly(b1);
-        assertThat(service.list(post, member, null).getFirst().nickname()).isEqualTo("배심원");
-        // 철회된 방에만 속한 사람은 게시물을 볼 수 없다
-        assertRejected(() -> service.list(post, memberC, null), HttpStatus.NOT_FOUND);
-        assertRejected(() -> service.list(post, outsider, null), HttpStatus.NOT_FOUND);
-        assertRejected(() -> service.list(UUID.randomUUID(), author, null), HttpStatus.NOT_FOUND);
+        // 작성자라도 보고 있는 방 것만 본다. 두 방 댓글이 한 스레드로 합쳐지지 않는다
+        assertThat(service.list(post, author, room)).extracting(PostCommentResponse::id).containsExactly(a1, a2);
+        assertThat(service.list(post, author, roomB)).extracting(PostCommentResponse::id).containsExactly(b1);
+        assertThat(service.list(post, member, room)).extracting(PostCommentResponse::id).containsExactly(a1, a2);
+        assertThat(service.list(post, memberB, roomB)).extracting(PostCommentResponse::id).containsExactly(b1);
+        assertThat(service.list(post, member, room).getFirst().nickname()).isEqualTo("배심원");
+        // 방을 안 주면 어느 방 대화인지 알 수 없어 거부한다(빈 ?room_id= 도 여기로 온다)
+        assertRejected(() -> service.list(post, author, null), HttpStatus.BAD_REQUEST);
+        // 공유가 철회된 방은 멤버라도 볼 수 없다
+        assertRejected(() -> service.list(post, member, roomC), HttpStatus.NOT_FOUND);
+        // 철회된 방에만 속한 사람은 게시물 자체를 볼 수 없다
+        assertRejected(() -> service.list(post, memberC, roomC), HttpStatus.NOT_FOUND);
+        assertRejected(() -> service.list(post, outsider, room), HttpStatus.NOT_FOUND);
+        assertRejected(() -> service.list(UUID.randomUUID(), author, room), HttpStatus.NOT_FOUND);
         assertThat(c1).isNotNull();
     }
 
@@ -339,7 +344,7 @@ class PostCommentServiceTest extends PostgresContainerSupport {
     void ownerDeletesAfterRevoke() {
         UUID commentId = UUID.fromString(create(member, room, "철회 뒤 지움").id());
         f.revoke(post, room);
-        assertRejected(() -> service.list(post, member, null), HttpStatus.NOT_FOUND);
+        assertRejected(() -> service.list(post, member, room), HttpStatus.NOT_FOUND);
 
         service.delete(post, commentId, member);
 
