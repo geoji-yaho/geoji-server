@@ -73,13 +73,24 @@ public class PostReadQueries {
                 postId);
     }
 
-    public List<PostDetailResponse.VoteBrief> votes(UUID postId) {
+    /**
+     * 볼 수 있는 표만. 게시물은 작성자가 속한 방 전부에 올라가므로 표도 여러 방에서 들어온다.
+     * 댓글과 같은 규칙으로 가린다(10 §9): 작성자는 전부 보고, 그 밖에는 자기가 멤버인 방에서
+     * 나온 표만 본다. 안 그러면 같은 방이 아닌 사람의 닉네임과 투표 사유가 보인다.
+     *
+     * <p>집계(tally)는 가리지 않는다. 평결을 만든 수 자체라 방마다 다르면 "2인 중 2인이 유죄"
+     * 같은 문구와 어긋난다. 숫자는 누가 어느 쪽인지 드러내지 않는다.
+     */
+    public List<PostDetailResponse.VoteBrief> visibleVotes(UUID postId, UUID viewerId, boolean isAuthor) {
         return jdbc.query("""
                         SELECT v.id, v.voter_id, pr.nickname AS voter_nickname, v.verdict::text AS verdict,
                                v.reason, v.created_at
                           FROM votes v
                           JOIN profiles pr ON pr.id = v.voter_id
                          WHERE v.post_id = ?
+                           AND (CAST(? AS boolean)
+                                OR EXISTS (SELECT 1 FROM room_members rm
+                                            WHERE rm.room_id = v.room_id AND rm.user_id = ?))
                          ORDER BY v.created_at""",
                 (rs, i) -> new PostDetailResponse.VoteBrief(
                         rs.getObject("id", UUID.class),
@@ -88,6 +99,16 @@ public class PostReadQueries {
                         VerdictType.valueOf(rs.getString("verdict")),
                         rs.getString("reason"),
                         rs.getObject("created_at", OffsetDateTime.class)),
+                postId, isAuthor, viewerId);
+    }
+
+    /** 집계는 방과 무관하게 전체다. 평결을 만든 수 자체다 */
+    public PostDetailResponse.Tally tally(UUID postId) {
+        return jdbc.queryForObject("""
+                SELECT count(*) FILTER (WHERE verdict IN ('guilty', 'disagree')) AS oppose,
+                       count(*) FILTER (WHERE verdict IN ('notGuilty', 'agree')) AS support
+                  FROM votes WHERE post_id = ?""",
+                (rs, i) -> new PostDetailResponse.Tally(rs.getInt("oppose"), rs.getInt("support")),
                 postId);
     }
 
@@ -141,19 +162,6 @@ public class PostReadQueries {
                                  JOIN rooms r ON r.id = rm.room_id
                                 WHERE rm.room_id = ? AND rm.user_id = ? AND r.deleted_at IS NULL)""",
                 Boolean.class, roomId, viewerId));
-    }
-
-    public static PostDetailResponse.Tally tallyOf(List<PostDetailResponse.VoteBrief> votes) {
-        int oppose = 0;
-        int support = 0;
-        for (PostDetailResponse.VoteBrief vote : votes) {
-            if (vote.verdict() == VerdictType.guilty || vote.verdict() == VerdictType.disagree) {
-                oppose++;
-            } else if (vote.verdict() == VerdictType.notGuilty || vote.verdict() == VerdictType.agree) {
-                support++;
-            }
-        }
-        return new PostDetailResponse.Tally(oppose, support);
     }
 
     /** 평결 확정 전에는 사유를 비운다. 확정 전에 남의 사유가 보이면 표가 쏠린다 */

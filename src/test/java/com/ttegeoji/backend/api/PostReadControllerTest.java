@@ -195,4 +195,44 @@ class PostReadControllerTest extends PostgresContainerSupport {
         mockMvc.perform(get("/api/rooms/" + room + "/posts").with(as(stranger)))
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    @DisplayName("같은 방이 아닌 사람의 표는 보이지 않는다. 집계 숫자는 그대로다")
+    void votesFromOtherRoomsAreHidden() throws Exception {
+        UUID otherRoom = f.room(author, "mild");
+        f.member(otherRoom, author);
+        UUID outsider = f.profile();
+        f.member(otherRoom, outsider);
+        jdbc.update("UPDATE profiles SET nickname = '딴방사람' WHERE id = ?", outsider);
+        f.share(post, otherRoom);
+        jdbc.update("""
+                INSERT INTO votes (post_id, voter_id, room_id, verdict, reason)
+                VALUES (?, ?, ?, CAST('guilty' AS verdict), '딴 방에서 쓴 사유')""", post, outsider, otherRoom);
+        vote(juror, "notGuilty", "같은 방 사유");
+
+        mockMvc.perform(get("/api/posts/" + post).with(as(juror)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tally.oppose").value(1))
+                .andExpect(jsonPath("$.tally.support").value(1))
+                .andExpect(jsonPath("$.votes.length()").value(1))
+                .andExpect(jsonPath("$.votes[0].voterNickname").value("배심원"));
+    }
+
+    @Test
+    @DisplayName("작성자는 모든 방의 표를 본다")
+    void authorSeesVotesFromEveryRoom() throws Exception {
+        UUID otherRoom = f.room(author, "mild");
+        f.member(otherRoom, author);
+        UUID outsider = f.profile();
+        f.member(otherRoom, outsider);
+        f.share(post, otherRoom);
+        jdbc.update("""
+                INSERT INTO votes (post_id, voter_id, room_id, verdict, reason)
+                VALUES (?, ?, ?, CAST('guilty' AS verdict), '딴 방에서 쓴 사유')""", post, outsider, otherRoom);
+        vote(juror, "notGuilty", "같은 방 사유");
+
+        mockMvc.perform(get("/api/posts/" + post).with(as(author)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.votes.length()").value(2));
+    }
 }
