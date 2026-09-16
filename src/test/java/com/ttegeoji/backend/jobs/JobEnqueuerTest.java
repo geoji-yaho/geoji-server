@@ -82,7 +82,7 @@ class JobEnqueuerTest extends PostgresContainerSupport {
     }
 
     @Test
-    @DisplayName("10 §3 SENTENCE verdict.confirmed — dedupe·priority 100·max_attempts 2·payload·deadline = DB now()+10s")
+    @DisplayName("10 §3 SENTENCE verdict.confirmed — dedupe·priority 100·max_attempts 2·payload·deadline = DB now() + SENTENCE 마감")
     void sentenceRow() {
         String verdictId = id();
         String postId = id();
@@ -101,7 +101,7 @@ class JobEnqueuerTest extends PostgresContainerSupport {
         assertThat(payload(row)).containsExactlyInAnyOrderEntriesOf(
                 Map.of("verdict_id", verdictId, "verdict_version", 4, "post_id", postId));
         // 같은 트랜잭션 안의 now() 는 고정이라 정확히 같다(10 §3 D-24 INSERT 시각 + 10s)
-        assertThat(job.deadlineAt().toInstant()).isEqualTo(dbNowPlus(10).toInstant());
+        assertThat(job.deadlineAt().toInstant()).isEqualTo(dbNowPlus(JobKind.SENTENCE.deadlineAfterSeconds()).toInstant());
         assertThat(row.deadlineAt().toInstant()).isEqualTo(job.deadlineAt().toInstant());
     }
 
@@ -150,7 +150,7 @@ class JobEnqueuerTest extends PostgresContainerSupport {
     }
 
     @Test
-    @DisplayName("10 §3 TEXT_RETRY verdict.text_retry — dedupe·priority 50·max_attempts 1·intensities·deadline = DB now()+20s")
+    @DisplayName("10 §3 TEXT_RETRY verdict.text_retry — dedupe·priority 50·max_attempts 1·intensities·deadline = DB now() + TEXT_RETRY 마감")
     void textRetryRow() {
         String verdictId = id();
         EnqueuedJob job = enqueuer.enqueueTextRetry(verdictId, 5, 2, List.of(SpiceLevel.spicy, SpiceLevel.hell));
@@ -166,7 +166,7 @@ class JobEnqueuerTest extends PostgresContainerSupport {
         assertThat(payload(row)).containsExactlyInAnyOrderEntriesOf(Map.of(
                 "verdict_id", verdictId, "verdict_version", 5, "round", 2,
                 "intensities", List.of("spicy", "hell")));
-        assertThat(job.deadlineAt().toInstant()).isEqualTo(dbNowPlus(20).toInstant());
+        assertThat(job.deadlineAt().toInstant()).isEqualTo(dbNowPlus(JobKind.TEXT_RETRY.deadlineAfterSeconds()).toInstant());
         assertThat(row.deadlineAt().toInstant()).isEqualTo(job.deadlineAt().toInstant());
     }
 

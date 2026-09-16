@@ -45,7 +45,7 @@ public class JobEnqueuer {
                 postId, postVersion, JobPayloads.prepare(postId, postVersion, audienceVersion), traceId);
     }
 
-    /** deadline_at = INSERT 시각(DB now()) + 10s(10 §3 D-24). 반환값의 deadlineAt 을 verdicts.deadline_at 에 같이 쓴다. */
+    /** deadline_at = INSERT 시각(DB now()) + kind 별 초(10 §3 D-24, 값은 {@link JobKind}). 반환값의 deadlineAt 을 verdicts.deadline_at 에 같이 쓴다. */
     public EnqueuedJob enqueueSentence(String verdictId, long verdictVersion, String postId) {
         return enqueueSentence(verdictId, verdictVersion, postId, null);
     }
