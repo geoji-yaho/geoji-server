@@ -138,19 +138,21 @@ public class InvalidationQueries {
     }
 
     /** 템플릿 전환에 필요한 verdict 값. sentence 는 무죄 계열이면 null */
-    public record VerdictForTemplate(UUID id, UUID postId, String juryResult, String sentence, long textVersion) {
+    public record VerdictForTemplate(UUID id, UUID postId, UUID roomId, String juryResult, String sentence,
+                                     long textVersion) {
     }
 
     /** id 오름차순으로 verdict 행을 잠근다(10 §2 verdict 단계) */
     public List<VerdictForTemplate> lockVerdictsForTemplate(List<UUID> verdictIds) {
         return jdbc.query("""
-                SELECT id, post_id, jury_result::text AS jury_result, sentence::text AS sentence, text_version
+                SELECT id, post_id, room_id, jury_result::text AS jury_result, sentence::text AS sentence, text_version
                   FROM verdicts
                  WHERE id = ANY(?)
                  ORDER BY id
                    FOR UPDATE""",
                 (rs, i) -> new VerdictForTemplate(rs.getObject("id", UUID.class), rs.getObject("post_id", UUID.class),
-                        rs.getString("jury_result"), rs.getString("sentence"), rs.getLong("text_version")),
+                        rs.getObject("room_id", UUID.class), rs.getString("jury_result"), rs.getString("sentence"),
+                        rs.getLong("text_version")),
                 (Object) verdictIds.toArray(UUID[]::new));
     }
 

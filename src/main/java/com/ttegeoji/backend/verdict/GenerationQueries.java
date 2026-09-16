@@ -145,11 +145,15 @@ public class GenerationQueries {
     }
 
     /** 템플릿 {n}=표 수 합, {m}=유죄 표 수(AI 저장소 graphs/templates.py 와 같은 치환) */
-    public JuryCounts juryCounts(UUID postId) {
+    /**
+     * 템플릿 문구의 "N인 중 M인" 이 되는 표 수. 방마다 따로 재판하므로 그 방 표만 센다.
+     * roomId 가 null 이면 방별 재판 이전의 옛 합산 판결이라 전체를 센다.
+     */
+    public JuryCounts juryCounts(UUID postId, UUID roomId) {
         return jdbcTemplate.queryForObject("""
                 SELECT count(*) AS jury, count(*) FILTER (WHERE verdict = CAST('guilty' AS verdict)) AS guilty
                   FROM votes
-                 WHERE post_id = ?
-                """, (rs, i) -> new JuryCounts(rs.getInt("jury"), rs.getInt("guilty")), postId);
+                 WHERE post_id = ? AND (CAST(? AS uuid) IS NULL OR room_id = ?)
+                """, (rs, i) -> new JuryCounts(rs.getInt("jury"), rs.getInt("guilty")), postId, roomId, roomId);
     }
 }

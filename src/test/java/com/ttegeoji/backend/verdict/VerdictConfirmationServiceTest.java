@@ -65,53 +65,75 @@ class VerdictConfirmationServiceTest extends PostgresContainerSupport {
             "reason_required", true);
 
     @Test
-    @DisplayName("10 §3 전원 투표 즉시 확정 — verdict 필드·policy_snapshot·강도·SENTENCE job 1개·deadline 일치")
-    void allVotedConfirmsImmediately() {
+    @DisplayName("9/16 방마다 따로 확정 — 한 방이 정족수를 채워도 다른 방은 투표 중")
+    void confirmsPerRoom() {
         UUID author = profile();
         UUID mild = room("mild", "now() - interval '1 day'");
         UUID hell = room("hell", "now()");
         UUID m1 = profile();
-        UUID m3 = profile();
-        UUID m4 = profile();
+        UUID m2 = profile();
+        UUID h1 = profile();
+        UUID h2 = profile();
         member(mild, author);
         member(hell, author);
         member(mild, m1);
-        member(hell, m3);
-        member(hell, m4);
+        member(mild, m2);
+        member(hell, h1);
+        member(hell, h2);
         UUID post = post(author, "spent", "now() + interval '1 hour'", mild, hell);
 
+        // mild 만 전원 투표 → mild 판결만 생긴다
         vote(post, m1, mild, VerdictType.notGuilty);
-        assertThat(service.onVoteCast(post)).isFalse();
-        vote(post, m3, hell, VerdictType.guilty);
-        assertThat(service.onVoteCast(post)).isFalse();
-        assertThat(verdictCount(post)).isZero();
+        assertThat(service.onVoteCast(post, mild)).isFalse();
+        vote(post, m2, mild, VerdictType.notGuilty);
+        assertThat(service.onVoteCast(post, mild)).isTrue();
 
-        vote(post, m4, hell, VerdictType.guilty);
-        assertThat(service.onVoteCast(post)).isTrue();
+        assertThat(verdictCount(post)).isEqualTo(1);
+        Map<String, Object> mildVerdict = verdictRow(post, mild);
+        assertThat(mildVerdict).containsEntry("jury_result", "notGuilty")
+                .containsEntry("default_intensity", "mild")
+                .containsEntry("applied_intensity", "mild");
+        // 강도는 그 방 하나뿐이다
+        assertThat(Json.read((String) mildVerdict.get("target_intensities"))).isEqualTo(List.of("mild"));
 
-        Map<String, Object> v = verdictRow(post);
-        assertThat(v).containsEntry("jury_result", "guilty")
-                .containsEntry("verdict_version", 1)
-                .containsEntry("sentence_status", "PENDING")
-                .containsEntry("text_status", "PENDING")
-                .containsEntry("default_intensity", "hell")
+        // hell 은 아직 투표 중이고, mild 표는 hell 집계에 들어가지 않는다
+        vote(post, h1, hell, VerdictType.guilty);
+        assertThat(service.onVoteCast(post, hell)).isFalse();
+        vote(post, h2, hell, VerdictType.guilty);
+        assertThat(service.onVoteCast(post, hell)).isTrue();
+
+        assertThat(verdictCount(post)).isEqualTo(2);
+        Map<String, Object> hellVerdict = verdictRow(post, hell);
+        assertThat(hellVerdict).containsEntry("jury_result", "guilty")
                 .containsEntry("applied_intensity", "hell");
-        assertThat(v.get("confirmed_at")).isNotNull();
-        assertThat(Json.read((String) v.get("target_intensities"))).isEqualTo(List.of("mild", "hell"));
-        // 유죄율 2/3 → 밴드 probation 하나(SentencingPolicy)
-        assertThat(Json.read((String) v.get("policy_snapshot"))).isEqualTo(Map.of(
-                "version", "sentencing-band-v1",
-                "allowed_sentences", List.of(Map.of("code", "probation", "rank", 1)),
-                "fallback_sentence", "probation",
-                "reason_required", true));
+        assertThat(Json.read((String) hellVerdict.get("target_intensities"))).isEqualTo(List.of("hell"));
 
-        assertThat(sentenceJobCount(post)).isEqualTo(1);
-        Map<String, Object> job = sentenceJob(post);
-        assertThat(Json.read((String) job.get("payload"))).isEqualTo(Map.of(
-                "verdict_id", v.get("id").toString(), "verdict_version", 1, "post_id", post.toString()));
-        assertThat(instant(v.get("deadline_at")))
-                .isEqualTo(instant(job.get("deadline_at")))
-                .isEqualTo(dbNowPlus(JobKind.SENTENCE.deadlineAfterSeconds()).toInstant());
+        // 같은 게시물인데 방마다 평결이 다르다
+        assertThat(mildVerdict.get("id")).isNotEqualTo(hellVerdict.get("id"));
+        assertThat(sentenceJobCount(post)).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("9/16 두 방에 다 있는 사람은 방마다 한 표씩 낸다")
+    void sameVoterVotesInEachRoom() {
+        UUID author = profile();
+        UUID a = room("mild", "now()");
+        UUID b = room("hell", "now()");
+        UUID both = profile();
+        member(a, author);
+        member(b, author);
+        member(a, both);
+        member(b, both);
+        UUID post = post(author, "spent", "now() + interval '1 hour'", a, b);
+
+        vote(post, both, a, VerdictType.guilty);
+        vote(post, both, b, VerdictType.notGuilty);
+
+        assertThat(service.onVoteCast(post, a)).isTrue();
+        assertThat(service.onVoteCast(post, b)).isTrue();
+
+        assertThat(verdictRow(post, a)).containsEntry("jury_result", "guilty");
+        assertThat(verdictRow(post, b)).containsEntry("jury_result", "notGuilty");
     }
 
     @Test
@@ -128,7 +150,7 @@ class VerdictConfirmationServiceTest extends PostgresContainerSupport {
         UUID post = post(author, "spent", "now() - interval '1 minute'", room);
         vote(post, m1, room, VerdictType.guilty);
         vote(post, m2, room, VerdictType.guilty);
-        assertThat(service.onVoteCast(post)).isFalse();
+        assertThat(service.onVoteCast(post, room)).isFalse();
 
         assertThat(service.confirmDue(juryQueries.dbNow())).isGreaterThanOrEqualTo(1);
 
@@ -189,7 +211,7 @@ class VerdictConfirmationServiceTest extends PostgresContainerSupport {
         vote(post, m1, room, VerdictType.disagree);
         vote(post, m2, room, VerdictType.disagree);
 
-        assertThat(service.onVoteCast(post)).isTrue();
+        assertThat(service.onVoteCast(post, room)).isTrue();
 
         Map<String, Object> v = verdictRow(post);
         assertThat(v).containsEntry("jury_result", "disagree").containsEntry("policy_is_null", false);
@@ -210,7 +232,7 @@ class VerdictConfirmationServiceTest extends PostgresContainerSupport {
         vote(post, m1, room, VerdictType.agree);
         vote(post, m2, room, VerdictType.agree);
 
-        assertThat(service.onVoteCast(post)).isTrue();
+        assertThat(service.onVoteCast(post, room)).isTrue();
 
         Map<String, Object> v = verdictRow(post);
         assertThat(v).containsEntry("jury_result", "agree");
@@ -231,7 +253,7 @@ class VerdictConfirmationServiceTest extends PostgresContainerSupport {
         vote(post, m1, room, VerdictType.notGuilty);
         vote(post, m2, room, VerdictType.notGuilty);
 
-        assertThat(service.onVoteCast(post)).isTrue();
+        assertThat(service.onVoteCast(post, room)).isTrue();
 
         Map<String, Object> v = verdictRow(post);
         assertThat(v).containsEntry("jury_result", "notGuilty").containsEntry("policy_is_null", false);
@@ -242,10 +264,11 @@ class VerdictConfirmationServiceTest extends PostgresContainerSupport {
     @Test
     @DisplayName("10 §3 허용 목록 빈 정책 → verdict 는 저장, SENTENCE job 0 + ERROR 로그, 게이트 보류 목록에도 없다")
     void emptyPolicyHasNoJob(CapturedOutput output) {
-        UUID post = guiltyAllVotedPost();
+        Case c = guiltyAllVotedPost();
+        UUID post = c.post();
         service.usePolicy(ratio -> new SentencingPolicy.Snapshot(SentencingPolicy.VERSION, List.of(), "probation", true));
         try {
-            assertThat(service.onVoteCast(post)).isTrue();
+            assertThat(service.onVoteCast(post, c.room())).isTrue();
         } finally {
             service.resetPolicy();
         }
@@ -259,11 +282,12 @@ class VerdictConfirmationServiceTest extends PostgresContainerSupport {
     @Test
     @DisplayName("10 §3 fallback ∉ 허용 목록 → SENTENCE job 0 + ERROR 로그")
     void fallbackOutsideListHasNoJob(CapturedOutput output) {
-        UUID post = guiltyAllVotedPost();
+        Case c = guiltyAllVotedPost();
+        UUID post = c.post();
         service.usePolicy(ratio -> new SentencingPolicy.Snapshot(SentencingPolicy.VERSION,
                 List.of(new SentencingPolicy.AllowedSentence("probation", 1)), "life", true));
         try {
-            assertThat(service.onVoteCast(post)).isTrue();
+            assertThat(service.onVoteCast(post, c.room())).isTrue();
         } finally {
             service.resetPolicy();
         }
@@ -275,10 +299,11 @@ class VerdictConfirmationServiceTest extends PostgresContainerSupport {
     @Test
     @DisplayName("10 §3 이미 확정된 게시물 재호출 → no-op(verdict 1행·job 1개)")
     void alreadyConfirmedIsNoop() {
-        UUID post = guiltyAllVotedPost();
+        Case c = guiltyAllVotedPost();
+        UUID post = c.post();
 
-        assertThat(service.onVoteCast(post)).isTrue();
-        assertThat(service.onVoteCast(post)).isFalse();
+        assertThat(service.onVoteCast(post, c.room())).isTrue();
+        assertThat(service.onVoteCast(post, c.room())).isFalse();
         service.confirmDue(juryQueries.dbNow().plusDays(1));
 
         assertThat(verdictCount(post)).isEqualTo(1);
@@ -288,11 +313,12 @@ class VerdictConfirmationServiceTest extends PostgresContainerSupport {
     @Test
     @DisplayName("10 §3 삭제된 게시물은 전원 투표·마감 스캔 모두 확정하지 않는다")
     void deletedPostNotConfirmed() {
-        UUID post = guiltyAllVotedPost();
+        Case c = guiltyAllVotedPost();
+        UUID post = c.post();
         jdbc.update("UPDATE posts SET deleted_at = now(), vote_deadline_at = now() - interval '1 minute' WHERE id = ?",
                 post);
 
-        assertThat(service.onVoteCast(post)).isFalse();
+        assertThat(service.onVoteCast(post, c.room())).isFalse();
         service.confirmDue(juryQueries.dbNow());
 
         assertThat(verdictCount(post)).isZero();
@@ -328,7 +354,7 @@ class VerdictConfirmationServiceTest extends PostgresContainerSupport {
                         vote(post, voter, room, VerdictType.guilty);
                         // 두 표가 모두 INSERT 된 뒤(아직 커밋 전) 둘이 같이 확정을 시도한다
                         await(bothVoted);
-                        return service.onVoteCast(post);
+                        return service.onVoteCast(post, room);
                     })))
                     .toList();
             int confirmed = 0;
@@ -352,10 +378,11 @@ class VerdictConfirmationServiceTest extends PostgresContainerSupport {
     @DisplayName("10 §3 확정 트랜잭션 롤백 → verdict 도 SENTENCE job 도 없다")
     void rollbackRemovesVerdictAndJob() {
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
-        UUID post = tx.execute(s -> guiltyAllVotedPost());
+        Case c = tx.execute(s -> guiltyAllVotedPost());
+        UUID post = c.post();
 
         tx.executeWithoutResult(s -> {
-            assertThat(service.onVoteCast(post)).isTrue();
+            assertThat(service.onVoteCast(post, c.room())).isTrue();
             assertThat(sentenceJobCount(post)).isEqualTo(1);
             s.setRollbackOnly();
         });
@@ -369,9 +396,10 @@ class VerdictConfirmationServiceTest extends PostgresContainerSupport {
     @DisplayName("10 §13 평결 commit 직후 중단 — SENTENCE job 은 verdict 와 같이 커밋돼 QUEUED, deadline 일치")
     void jobCommittedWithVerdict() {
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
-        UUID post = tx.execute(s -> guiltyAllVotedPost());
+        Case c = tx.execute(s -> guiltyAllVotedPost());
+        UUID post = c.post();
 
-        assertThat(service.onVoteCast(post)).isTrue();
+        assertThat(service.onVoteCast(post, c.room())).isTrue();
 
         Map<String, Object> v = verdictRow(post);
         Map<String, Object> job = sentenceJob(post);
@@ -382,8 +410,12 @@ class VerdictConfirmationServiceTest extends PostgresContainerSupport {
 
     // --- 픽스처 -------------------------------------------------------------------
 
+    /** 재판 한 건 = (게시물, 방). 판결이 방마다 나므로 확정도 방을 지정해 부른다 */
+    private record Case(UUID post, UUID room) {
+    }
+
     /** 가능 인원 2명이 모두 guilty 를 낸 spent 게시물(마감 1시간 뒤). */
-    private UUID guiltyAllVotedPost() {
+    private Case guiltyAllVotedPost() {
         UUID author = profile();
         UUID room = room("mild", "now()");
         UUID m1 = profile();
@@ -394,7 +426,7 @@ class VerdictConfirmationServiceTest extends PostgresContainerSupport {
         UUID post = post(author, "spent", "now() + interval '1 hour'", room);
         vote(post, m1, room, VerdictType.guilty);
         vote(post, m2, room, VerdictType.guilty);
-        return post;
+        return new Case(post, room);
     }
 
     private UUID profile() {
@@ -439,13 +471,20 @@ class VerdictConfirmationServiceTest extends PostgresContainerSupport {
     }
 
     private Map<String, Object> verdictRow(UUID post) {
-        return jdbc.queryForMap("""
-                SELECT id, jury_result::text AS jury_result, verdict_version, sentence_status, text_status,
-                       default_intensity::text AS default_intensity, applied_intensity::text AS applied_intensity,
-                       target_intensities::text AS target_intensities, policy_snapshot::text AS policy_snapshot,
-                       jsonb_typeof(policy_snapshot) = 'null' AS policy_is_null, confirmed_at, deadline_at
-                  FROM verdicts WHERE post_id = ?""", post);
+        return jdbc.queryForMap(VERDICT_COLUMNS + " WHERE post_id = ?", post);
     }
+
+    /** 방마다 판결이 따로라 방을 지정해 읽는다 */
+    private Map<String, Object> verdictRow(UUID post, UUID room) {
+        return jdbc.queryForMap(VERDICT_COLUMNS + " WHERE post_id = ? AND room_id = ?", post, room);
+    }
+
+    private static final String VERDICT_COLUMNS = """
+            SELECT id, jury_result::text AS jury_result, verdict_version, sentence_status, text_status,
+                   default_intensity::text AS default_intensity, applied_intensity::text AS applied_intensity,
+                   target_intensities::text AS target_intensities, policy_snapshot::text AS policy_snapshot,
+                   jsonb_typeof(policy_snapshot) = 'null' AS policy_is_null, confirmed_at, deadline_at
+              FROM verdicts""";
 
     private int sentenceJobCount(UUID post) {
         Integer count = jdbc.queryForObject(

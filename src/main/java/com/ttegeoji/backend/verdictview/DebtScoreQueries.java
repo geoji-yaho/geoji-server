@@ -37,6 +37,10 @@ public class DebtScoreQueries {
      *
      * <p>이번 달 지출은 본인이 쓴 {@code spent} 게시물 합이고, 평결 점수는 확정된 유죄·무죄 중
      * 무죄 비율이다. 살까 말까(considering)는 지출이 아니라 양쪽 다 세지 않는다.
+     *
+     * <p>판결은 방마다 생기므로 {@code count(DISTINCT po.id)} 로 <b>게시물 단위</b>로 센다.
+     * 안 그러면 여러 방에 올린 글 하나가 방 수만큼 세어져 점수가 부풀어 오른다.
+     * 한 게시물이 방마다 다른 평결을 받으면 무죄가 하나라도 있으면 무죄로 센다.
      */
     public Map<UUID, BigDecimal> forRoom(UUID roomId) {
         Map<UUID, BigDecimal> scores = new HashMap<>();
@@ -57,10 +61,10 @@ public class DebtScoreQueries {
                                   WHERE po.author_id = m.user_id AND po.deleted_at IS NULL
                                     AND po.post_type = 'spent'
                                     AND timezone('Asia/Seoul', po.created_at) >= month.start_kst), 0) AS spent,
-                       (SELECT count(*) FROM posts po JOIN verdicts v ON v.post_id = po.id
+                       (SELECT count(DISTINCT po.id) FROM posts po JOIN verdicts v ON v.post_id = po.id
                          WHERE po.author_id = m.user_id AND po.deleted_at IS NULL
                            AND v.jury_result IN ('guilty', 'notGuilty')) AS judged,
-                       (SELECT count(*) FROM posts po JOIN verdicts v ON v.post_id = po.id
+                       (SELECT count(DISTINCT po.id) FROM posts po JOIN verdicts v ON v.post_id = po.id
                          WHERE po.author_id = m.user_id AND po.deleted_at IS NULL
                            AND v.jury_result = 'notGuilty') AS acquitted
                   FROM member m CROSS JOIN month

@@ -9,6 +9,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
@@ -22,9 +23,10 @@ public class PostReadController {
     private final PostReadService service;
 
     @GetMapping("/api/posts/{postId}")
-    public ResponseEntity<?> detail(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID postId) {
+    public ResponseEntity<?> detail(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID postId,
+                                   @RequestParam(name = "room_id", required = false) UUID roomId) {
         try {
-            return ResponseEntity.ok(service.detail(postId, CurrentUser.idOf(jwt)));
+            return ResponseEntity.ok(service.detail(postId, CurrentUser.idOf(jwt), roomId));
         } catch (PublicApiRejection e) {
             return ResponseEntity.status(e.getStatus()).body(Map.of("message", e.getMessage()));
         }

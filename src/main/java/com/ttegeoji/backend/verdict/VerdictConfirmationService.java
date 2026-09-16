@@ -55,8 +55,8 @@ public class VerdictConfirmationService {
      * @return 이번 호출로 확정했으면 true
      */
     @Transactional
-    public boolean onVoteCast(UUID postId) {
-        return confirm(postId, Trigger.ALL_VOTED, null);
+    public boolean onVoteCast(UUID postId, UUID roomId) {
+        return confirm(postId, roomId, Trigger.ALL_VOTED, null);
     }
 
     /**
@@ -66,13 +66,14 @@ public class VerdictConfirmationService {
      */
     public int confirmDue(OffsetDateTime now) {
         int confirmed = 0;
-        for (UUID postId : juryQueries.duePostIds(now)) {
+        for (JuryQueries.DueCase due : juryQueries.dueCases(now)) {
             try {
-                if (Boolean.TRUE.equals(transactionTemplate.execute(s -> confirm(postId, Trigger.DEADLINE, now)))) {
+                if (Boolean.TRUE.equals(transactionTemplate.execute(
+                        s -> confirm(due.postId(), due.roomId(), Trigger.DEADLINE, now)))) {
                     confirmed++;
                 }
             } catch (RuntimeException e) {
-                log.error("10 §3 마감 확정 실패 post={}", postId, e);
+                log.error("10 §3 마감 확정 실패 post={} room={}", due.postId(), due.roomId(), e);
             }
         }
         return confirmed;
@@ -86,35 +87,33 @@ public class VerdictConfirmationService {
         this.policyForGuiltyRatio = SentencingPolicy::forGuiltyRatio;
     }
 
-    private boolean confirm(UUID postId, Trigger trigger, OffsetDateTime now) {
+    private boolean confirm(UUID postId, UUID roomId, Trigger trigger, OffsetDateTime now) {
         Optional<LockedPost> locked = juryQueries.lockPost(postId);
         if (locked.isEmpty()) {
             return false;
         }
         LockedPost post = locked.get();
-        if (post.deleted() || juryQueries.verdictExists(postId)) {
+        if (post.deleted() || juryQueries.verdictExists(postId, roomId)) {
             return false;
         }
         boolean ready = switch (trigger) {
-            case ALL_VOTED -> juryQueries.allEligibleVoted(postId, post.authorId());
+            case ALL_VOTED -> juryQueries.allEligibleVoted(postId, roomId, post.authorId());
             case DEADLINE -> !post.voteDeadlineAt().isAfter(now);
         };
         if (!ready) {
             return false;
         }
 
-        List<JuryTally.SharedRoom> rooms = juryQueries.sharedRooms(postId);
-        if (rooms.isEmpty()) {
-            log.error("10 §3 공유 방이 없어 평결을 확정하지 못한다 post={}", postId);
+        // 공유가 철회된 방이면 빈 결과다. 그 방 재판은 열지 않는다
+        Optional<JuryTally.SharedRoom> shared = juryQueries.sharedRoom(postId, roomId);
+        if (shared.isEmpty()) {
             return false;
         }
-        Set<String> roomIds = rooms.stream().map(JuryTally.SharedRoom::roomId).collect(Collectors.toSet());
-        // 공유가 철회된 방에서 들어온 표는 집계하지 않는다(JuryTally 는 공유 방 밖 표를 받지 않는다)
-        List<JuryTally.Vote> votes = juryQueries.votes(postId).stream()
-                .filter(v -> roomIds.contains(v.roomId()))
-                .toList();
+        List<JuryTally.SharedRoom> rooms = List.of(shared.get());
+        // 그 방에서 들어온 표만 센다
+        List<JuryTally.Vote> votes = juryQueries.votes(postId, roomId);
         // 가능 인원 0 이면 JuryTally 가 받지 않는다. 1 로 두어도 표 0 → dismissed 로 결과가 같다
-        int eligible = Math.max(1, juryQueries.eligibleCount(postId, post.authorId()));
+        int eligible = Math.max(1, juryQueries.eligibleCount(postId, roomId, post.authorId()));
         JuryTally.Result tally = JuryTally.tally(post.postType(), votes, eligible, rooms);
 
         // 유죄는 유죄율 밴드. 무죄·동의·기각은 최저 밴드 객체(AI case-snapshot jury.policy 가 필수 객체·minItems 1, 사용자 9/15).
@@ -126,7 +125,7 @@ public class VerdictConfirmationService {
         };
         String policyError = tally.result() == VerdictType.guilty ? policyError(policy) : null;
 
-        Optional<InsertedVerdict> inserted = juryQueries.insertVerdict(postId, tally.result().name(),
+        Optional<InsertedVerdict> inserted = juryQueries.insertVerdict(postId, roomId, tally.result().name(),
                 policy == null ? "null" : Json.write(policyJson(policy)),
                 Json.write(tally.targetIntensities().stream().map(SpiceLevel::name).toList()),
                 tally.defaultIntensity());

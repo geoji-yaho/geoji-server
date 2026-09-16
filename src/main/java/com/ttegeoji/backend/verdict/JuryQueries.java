@@ -67,9 +67,36 @@ public class JuryQueries {
                 postId).stream().findFirst();
     }
 
-    public boolean verdictExists(UUID postId) {
-        return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
-                "SELECT EXISTS (SELECT 1 FROM verdicts WHERE post_id = ?)", Boolean.class, postId));
+    /**
+     * 그 방 판결이 이미 있는가. 방별 재판 이전에 만들어진 옛 합산 판결(room_id NULL)이 있어도
+     * 다시 만들지 않는다 — 그 게시물은 이미 한 번 판결이 났다.
+     */
+    public boolean verdictExists(UUID postId, UUID roomId) {
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject("""
+                SELECT EXISTS (SELECT 1 FROM verdicts
+                                WHERE post_id = ? AND (room_id = ? OR room_id IS NULL))""",
+                Boolean.class, postId, roomId));
+    }
+
+    /** 재판할 방 하나. 공유가 철회됐거나 방이 없으면 빈 결과라 확정하지 않는다. */
+    public Optional<JuryTally.SharedRoom> sharedRoom(UUID postId, UUID roomId) {
+        return jdbcTemplate.query("""
+                        SELECT r.id, r.spice_level::text AS spice_level, r.created_at
+                          FROM post_rooms pr JOIN rooms r ON r.id = pr.room_id
+                         WHERE pr.post_id = ? AND pr.room_id = ? %s
+                        """.formatted(activeShareCondition()),
+                (rs, i) -> new JuryTally.SharedRoom(rs.getString("id"), SpiceLevel.valueOf(rs.getString("spice_level")),
+                        rs.getObject("created_at", OffsetDateTime.class)),
+                postId, roomId).stream().findFirst();
+    }
+
+    /** 이 게시물이 지금 공유된 방들(철회되지 않은 것). 전원 투표 확정이 돌 방을 고를 때 쓴다. */
+    public List<UUID> activeRoomIds(UUID postId) {
+        return jdbcTemplate.query("""
+                        SELECT pr.room_id FROM post_rooms pr
+                         WHERE pr.post_id = ? %s ORDER BY pr.room_id
+                        """.formatted(activeShareCondition()),
+                (rs, i) -> rs.getObject("room_id", UUID.class), postId);
     }
 
     /** 공유 방(철회되지 않은 것). 생성일 순. */
@@ -85,66 +112,83 @@ public class JuryQueries {
                 postId);
     }
 
-    /** 투표 가능 인원 = 공유 방 멤버 합집합 − 작성자. */
-    public int eligibleCount(UUID postId, UUID authorId) {
+    /** 투표 가능 인원 = **그 방** 멤버 − 작성자. 방마다 따로 재판하므로 합집합이 아니다. */
+    public int eligibleCount(UUID postId, UUID roomId, UUID authorId) {
         Integer count = jdbcTemplate.queryForObject("""
-                SELECT count(DISTINCT rm.user_id)
+                SELECT count(*)
                   FROM post_rooms pr JOIN room_members rm ON rm.room_id = pr.room_id
-                 WHERE pr.post_id = ? AND rm.user_id <> ? %s
-                """.formatted(activeShareCondition()), Integer.class, postId, authorId);
+                 WHERE pr.post_id = ? AND pr.room_id = ? AND rm.user_id <> ? %s
+                """.formatted(activeShareCondition()), Integer.class, postId, roomId, authorId);
         return count == null ? 0 : count;
     }
 
-    /** 투표 가능 인원이 1명 이상이고 그 전원이 표를 냈는가. */
-    public boolean allEligibleVoted(UUID postId, UUID authorId) {
+    /**
+     * 그 방 투표 가능 인원이 1명 이상이고 그 전원이 <b>그 방에서</b> 표를 냈는가.
+     * 표 검사에 room_id 가 빠지면 A 방에서 투표한 사람이 B 방에서도 투표한 것으로 잡힌다.
+     */
+    public boolean allEligibleVoted(UUID postId, UUID roomId, UUID authorId) {
         return Boolean.TRUE.equals(jdbcTemplate.queryForObject("""
                 WITH eligible AS (
-                    SELECT DISTINCT rm.user_id
+                    SELECT rm.user_id
                       FROM post_rooms pr JOIN room_members rm ON rm.room_id = pr.room_id
-                     WHERE pr.post_id = ? AND rm.user_id <> ? %s)
+                     WHERE pr.post_id = ? AND pr.room_id = ? AND rm.user_id <> ? %s)
                 SELECT EXISTS (SELECT 1 FROM eligible)
                    AND NOT EXISTS (SELECT 1 FROM eligible e
                                     WHERE NOT EXISTS (SELECT 1 FROM votes vo
-                                                       WHERE vo.post_id = ? AND vo.voter_id = e.user_id))
-                """.formatted(activeShareCondition()), Boolean.class, postId, authorId, postId));
+                                                       WHERE vo.post_id = ? AND vo.room_id = ?
+                                                         AND vo.voter_id = e.user_id))
+                """.formatted(activeShareCondition()), Boolean.class, postId, roomId, authorId, postId, roomId));
     }
 
-    public List<JuryTally.Vote> votes(UUID postId) {
-        return jdbcTemplate.query(
-                "SELECT verdict::text AS verdict, room_id FROM votes WHERE post_id = ? ORDER BY created_at, id",
-                (rs, i) -> new JuryTally.Vote(rs.getString("verdict"), rs.getString("room_id")),
-                postId);
-    }
-
-    /** vote_deadline_at 이 지났고 verdict 가 없고 삭제되지 않은 게시물. */
-    public List<UUID> duePostIds(OffsetDateTime now) {
+    /** 그 방에서 들어온 표만. 다른 방 표는 이 방 재판에 세지 않는다. */
+    public List<JuryTally.Vote> votes(UUID postId, UUID roomId) {
         return jdbcTemplate.query("""
-                        SELECT p.id FROM posts p
+                        SELECT verdict::text AS verdict, room_id FROM votes
+                         WHERE post_id = ? AND room_id = ? ORDER BY created_at, id""",
+                (rs, i) -> new JuryTally.Vote(rs.getString("verdict"), rs.getString("room_id")),
+                postId, roomId);
+    }
+
+    /** 마감 스캔 대상 한 건. 방마다 따로 재판하므로 (게시물, 방) 쌍이다. */
+    public record DueCase(UUID postId, UUID roomId) {
+    }
+
+    /**
+     * vote_deadline_at 이 지났고 삭제되지 않았으며 <b>그 방 판결이 아직 없는</b> (게시물, 방) 쌍.
+     * 옛 합산 판결(room_id NULL)이 있는 게시물은 이미 판결이 난 것이라 제외한다.
+     */
+    public List<DueCase> dueCases(OffsetDateTime now) {
+        return jdbcTemplate.query("""
+                        SELECT p.id AS post_id, pr.room_id FROM posts p
+                          JOIN post_rooms pr ON pr.post_id = p.id %s
                          WHERE p.vote_deadline_at <= ? AND p.deleted_at IS NULL
-                           AND NOT EXISTS (SELECT 1 FROM verdicts v WHERE v.post_id = p.id)
+                           AND NOT EXISTS (SELECT 1 FROM verdicts v
+                                            WHERE v.post_id = p.id
+                                              AND (v.room_id = pr.room_id OR v.room_id IS NULL))
                          ORDER BY p.vote_deadline_at
-                        """,
-                (rs, i) -> rs.getObject("id", UUID.class), now);
+                        """.formatted(activeShareCondition()),
+                (rs, i) -> new DueCase(rs.getObject("post_id", UUID.class), rs.getObject("room_id", UUID.class)), now);
     }
 
     /**
      * verdicts INSERT(10 §3). confirmed_at 은 DB now(), deadline_at 은 NULL(D-24 게이트가 SENTENCE 를 넣을 때 채운다).
      * 같은 post 에 이미 있으면 빈 결과(post_id UNIQUE).
      */
-    public Optional<InsertedVerdict> insertVerdict(UUID postId, String juryResult, String policySnapshotJson,
-                                                   String targetIntensitiesJson, SpiceLevel defaultIntensity) {
+    public Optional<InsertedVerdict> insertVerdict(UUID postId, UUID roomId, String juryResult,
+                                                   String policySnapshotJson, String targetIntensitiesJson,
+                                                   SpiceLevel defaultIntensity) {
         return jdbcTemplate.query("""
-                        INSERT INTO verdicts (post_id, verdict_version, jury_result, policy_snapshot, confirmed_at, deadline_at,
-                                              sentence_status, text_status, target_intensities, default_intensity,
-                                              applied_intensity)
-                        VALUES (?, 1, CAST(? AS verdict), CAST(? AS jsonb), now(), NULL, 'PENDING', 'PENDING',
+                        INSERT INTO verdicts (post_id, room_id, verdict_version, jury_result, policy_snapshot, confirmed_at,
+                                              deadline_at, sentence_status, text_status, target_intensities,
+                                              default_intensity, applied_intensity)
+                        VALUES (?, ?, 1, CAST(? AS verdict), CAST(? AS jsonb), now(), NULL, 'PENDING', 'PENDING',
                                 CAST(? AS jsonb), CAST(? AS spice_level), CAST(? AS spice_level))
-                        ON CONFLICT (post_id) DO NOTHING
+                        ON CONFLICT (post_id, room_id) DO NOTHING
                         RETURNING id, confirmed_at
                         """,
                 (rs, i) -> new InsertedVerdict(rs.getObject("id", UUID.class),
                         rs.getObject("confirmed_at", OffsetDateTime.class)),
-                postId, juryResult, policySnapshotJson, targetIntensitiesJson, defaultIntensity.name(),
+                postId, roomId, juryResult, policySnapshotJson, targetIntensitiesJson, defaultIntensity.name(),
                 defaultIntensity.name()).stream().findFirst();
     }
 

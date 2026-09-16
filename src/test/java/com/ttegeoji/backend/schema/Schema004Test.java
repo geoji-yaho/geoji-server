@@ -165,23 +165,41 @@ class Schema004Test extends PostgresContainerSupport {
     }
 
     @Test
-    @DisplayName("10 §2 verdicts.post_id 중복 거부")
-    void verdictPostIdDuplicateRejected() {
+    @DisplayName("9/16 verdicts 는 방마다 1건 — 같은 방 중복은 거부, 다른 방은 허용")
+    void verdictIsOnePerRoom() {
+        UUID author = insertProfile();
+        UUID roomA = insertRoom(author);
+        UUID roomB = insertRoom(author);
+        UUID post = insertPost(author, "item", "식비");
+
+        insertVerdict(post, roomA);
+        // 다른 방은 따로 재판하므로 판결이 하나 더 생긴다
+        insertVerdict(post, roomB);
+        // 같은 방에 두 번은 안 된다
+        assertSqlState(() -> insertVerdict(post, roomA), UNIQUE);
+    }
+
+    @Test
+    @DisplayName("9/16 옛 합산 판결(room_id NULL)은 게시물당 하나만")
+    void legacyVerdictIsOnePerPost() {
         UUID post = insertPost(insertProfile(), "item", "식비");
         insertVerdict(post);
         assertSqlState(() -> insertVerdict(post), UNIQUE);
     }
 
     @Test
-    @DisplayName("9/14 votes (post_id, voter_id) 중복 거부 — 여러 방에 공유돼도 1표")
-    void voteDuplicateRejected() {
+    @DisplayName("9/16 votes 는 방마다 1표 — 다른 방은 허용, 같은 방 중복은 거부")
+    void voteIsOnePerRoom() {
         UUID author = insertProfile();
         UUID voter = insertProfile();
         UUID roomA = insertRoom(author);
         UUID roomB = insertRoom(author);
         UUID post = insertPost(author, "item", "식비");
+
         insertVote(post, voter, roomA, "guilty", "사치");
-        assertSqlState(() -> insertVote(post, voter, roomB, "notGuilty", "필요"), UNIQUE);
+        // 방마다 따로 재판하므로 두 방에 다 있으면 방마다 한 표씩 낸다(10 §5 9/14 결정 이탈)
+        insertVote(post, voter, roomB, "notGuilty", "필요");
+        assertSqlState(() -> insertVote(post, voter, roomA, "notGuilty", "번복"), UNIQUE);
     }
 
     @Test
@@ -273,10 +291,17 @@ class Schema004Test extends PostgresContainerSupport {
                 UUID.class, author, category, item);
     }
 
+    /** 옛 합산 판결(room_id NULL) */
     private UUID insertVerdict(UUID post) {
+        return insertVerdict(post, null);
+    }
+
+    private UUID insertVerdict(UUID post, UUID room) {
         return jdbc.queryForObject("""
-                INSERT INTO verdicts (post_id, jury_result, policy_snapshot, confirmed_at, target_intensities, default_intensity)
-                VALUES (?, 'guilty', '{}'::jsonb, now(), '["mild"]'::jsonb, 'mild') RETURNING id""", UUID.class, post);
+                INSERT INTO verdicts (post_id, room_id, jury_result, policy_snapshot, confirmed_at,
+                                      target_intensities, default_intensity)
+                VALUES (?, ?, 'guilty', '{}'::jsonb, now(), '["mild"]'::jsonb, 'mild') RETURNING id""",
+                UUID.class, post, room);
     }
 
     private void insertVerdictText(UUID verdict, String intensity) {

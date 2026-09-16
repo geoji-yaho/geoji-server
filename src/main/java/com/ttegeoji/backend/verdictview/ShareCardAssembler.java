@@ -31,14 +31,18 @@ public class ShareCardAssembler {
     private final VerdictReadGuard readGuard;
     private final SentenceLabels sentenceLabels;
 
-    public ShareCardResponse assemble(UUID postId, UUID userId) {
+    /**
+     * @param roomIdOrNull 어느 방 판결로 카드를 만들지. 방마다 따로 재판하므로 필요하다.
+     *                     없으면 옛 합산 판결만 찾는다(방별 재판 이전 게시물).
+     */
+    public ShareCardResponse assemble(UUID postId, UUID userId, UUID roomIdOrNull) {
         PostRow post = queries.findPost(postId)
                 .filter(p -> !p.deleted())
                 .orElseThrow(PublicApiRejection::notFound);
-        if (!viewAssembler.canView(post, userId, null)) {
+        if (!viewAssembler.canView(post, userId, roomIdOrNull)) {
             throw PublicApiRejection.notFound();
         }
-        VerdictRow verdict = queries.findVerdict(postId)
+        VerdictRow verdict = queries.findVerdict(postId, roomIdOrNull)
                 .filter(v -> "FINAL".equals(v.sentenceStatus()) && !VerdictViewAssembler.DISMISSED.equals(v.juryResult()))
                 .orElseThrow(() -> new PublicApiRejection(HttpStatus.NOT_FOUND, "판결이 아직 확정되지 않았습니다."));
 
