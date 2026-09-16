@@ -7,11 +7,13 @@ package com.ttegeoji.backend.jobs;
 public enum JobKind {
     PREPARE(30, 2, null),
     // 10 §3 D-24 는 10초지만 운영에서 그 예산으로는 AI 문구가 구조적으로 안 나온다(9/16, AI 파트 회신).
-    // 워커의 노드 상한이 min(노드 상한, 남은 마감)이라, 마감이 짧으면 뒤쪽 노드부터 차례로 잘린다.
-    // 25초로 올렸더니 sentencing·writer 는 살았지만 마지막 evaluator 가 또 잘렸다 —
-    // job 실측이 예산 25초 중 23.7초였다(노드 합 12.4초 + 노드 밖 오버헤드 약 11초).
-    // 45초면 노드가 각자 상한(sentencing 8 · writer 8 · evaluator 10)을 다 받고 finalize 여유도 남는다.
-    SENTENCE(100, 2, 45),
+    // 워커의 노드 상한이 min(노드 상한, 남은 마감)이라 마감이 짧으면 뒤쪽 노드부터 차례로 잘린다.
+    // 10 → 25 → 45 로 올리며 sentencing·writer·evaluator 를 차례로 살렸고, 45초에서는 검수 뒤
+    // writer_repair 가 "남은 ≥ 5초" 문턱을 못 넘어 재작성을 건너뛰었다(4ms 통과 → 검증 실패).
+    // 실측 합: begin 0.9 + prep 0.5 + sentencing 8.6 + writer 5.9 + evaluator 13.9 + 재작성 6
+    //        + 검수 2회차 14 + finalize 1.5 + 노드 밖 오버헤드 11 ≈ 62초.
+    // 90 은 상한이지 대기 시간이 아니다. 검수가 1회차에 통과하면 40초대에 끝난다.
+    SENTENCE(100, 2, 90),
     RETAIN(10, 5, null),
     TEXT_RETRY(50, 1, 20);
 
