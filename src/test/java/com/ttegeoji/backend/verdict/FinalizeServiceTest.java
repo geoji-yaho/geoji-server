@@ -285,11 +285,50 @@ class FinalizeServiceTest extends PostgresContainerSupport {
     }
 
     @Test
-    @DisplayName("10 §5 최초 확정인데 sentencing null → 422 INVALID_DRAFT")
+    @DisplayName("10 §5 유죄 최초 확정인데 sentencing null → 422 INVALID_DRAFT")
     void firstFixWithoutSentencing() {
         Case c = newCase();
 
         assertRejected(c, bytes(body(c, draft(), null, evaluation())), HttpStatus.UNPROCESSABLE_CONTENT, "INVALID_DRAFT");
+    }
+
+    @Test
+    @DisplayName("10 §16.6-3 비유죄 최초 확정은 sentencing null 로 FINAL 저장, 형량 컬럼은 비운다")
+    void firstFixNotGuiltyWithoutSentencing() {
+        Case c = newCase();
+        makeNotGuilty(c);
+        ObjectNode draft = draft();
+        draft.put("meme_tag", "NOT_GUILTY");
+
+        service.finalizeVerdict(c.verdictId.toString(), bytes(body(c, draft, null, evaluation())));
+
+        Map<String, Object> row = jdbc.queryForMap(
+                "SELECT sentence_status, sentence, sentence_source, sentencing_reason, reason_source, text_status"
+                        + " FROM verdicts WHERE id = ?", c.verdictId);
+        assertThat(row.get("sentence_status")).isEqualTo("FINAL");
+        assertThat(row.get("sentence")).isNull();
+        assertThat(row.get("sentence_source")).isNull();
+        assertThat(row.get("sentencing_reason")).isNull();
+        assertThat(row.get("reason_source")).isNull();
+        assertThat(row.get("text_status")).isEqualTo("AI_READY");
+    }
+
+    @Test
+    @DisplayName("10 §16.6-3 비유죄인데 sentencing 을 보내면 → 422 INVALID_DRAFT")
+    void firstFixNotGuiltyWithSentencing() {
+        Case c = newCase();
+        makeNotGuilty(c);
+        ObjectNode draft = draft();
+        draft.put("meme_tag", "NOT_GUILTY");
+
+        assertRejected(c, bytes(body(c, draft, sentencing(), evaluation())),
+                HttpStatus.UNPROCESSABLE_CONTENT, "INVALID_DRAFT");
+    }
+
+    /** 비유죄 평결로 바꾼다. policy_snapshot 은 최저 밴드 자리채움 그대로다(VerdictConfirmationService 와 같다) */
+    private void makeNotGuilty(Case c) {
+        jdbc.update("UPDATE verdicts SET jury_result = CAST('notGuilty' AS verdict) WHERE id = ?", c.verdictId);
+        insertMeme("NOT_GUILTY", "{}", "{}", "{}");
     }
 
     @Test
