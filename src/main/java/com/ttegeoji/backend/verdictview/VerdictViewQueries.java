@@ -27,7 +27,8 @@ public class VerdictViewQueries {
     public record InsertedVote(UUID id, OffsetDateTime createdAt) {
     }
 
-    public record VerdictRow(UUID id, String juryResult, String sentenceStatus, String sentence,
+    /** roomId 가 null 이면 방별 재판 이전의 옛 합산 판결이다. 표 집계도 그때는 전체를 센다 */
+    public record VerdictRow(UUID id, UUID roomId, String juryResult, String sentenceStatus, String sentence,
                              String sentencingReason, String textStatus, long textVersion, String appliedIntensity,
                              String defaultIntensity, String memeTag, UUID memeImageId, String memeImageUrl) {
 
@@ -102,14 +103,22 @@ public class VerdictViewQueries {
                 (rs, i) -> rs.getString("spice_level"), roomId).stream().findFirst();
     }
 
-    public boolean verdictExists(UUID postId) {
-        return Boolean.TRUE.equals(jdbc.queryForObject(
-                "SELECT EXISTS (SELECT 1 FROM verdicts WHERE post_id = ?)", Boolean.class, postId));
+    /**
+     * 그 방 재판이 이미 끝났는가. 방마다 따로 재판하므로 A 방 확정이 B 방 투표를 막지 않는다.
+     * 옛 합산 판결(room_id NULL)이 있으면 그 게시물은 이미 끝난 것이라 모든 방에서 막는다.
+     */
+    public boolean verdictExists(UUID postId, UUID roomId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+                SELECT EXISTS (SELECT 1 FROM verdicts
+                                WHERE post_id = ? AND (room_id = ? OR room_id IS NULL))""",
+                Boolean.class, postId, roomId));
     }
 
-    public boolean voteExists(UUID postId, UUID voterId) {
+    /** 그 방에서 이미 투표했는가. 두 방에 다 있으면 방마다 한 번씩 낼 수 있다(9/16 결정). */
+    public boolean voteExists(UUID postId, UUID voterId, UUID roomId) {
         return Boolean.TRUE.equals(jdbc.queryForObject(
-                "SELECT EXISTS (SELECT 1 FROM votes WHERE post_id = ? AND voter_id = ?)", Boolean.class, postId, voterId));
+                "SELECT EXISTS (SELECT 1 FROM votes WHERE post_id = ? AND voter_id = ? AND room_id = ?)",
+                Boolean.class, postId, voterId, roomId));
     }
 
     public InsertedVote insertVote(UUID postId, UUID voterId, UUID roomId, String verdict, String reason) {
@@ -122,21 +131,31 @@ public class VerdictViewQueries {
                 postId, voterId, roomId, verdict, reason);
     }
 
-    public Optional<VerdictRow> findVerdict(UUID postId) {
+    /**
+     * 그 방 판결. 방마다 따로 재판하므로 room_id 로 고른다.
+     *
+     * <p>room_id 가 null 이거나 그 방 판결이 아직 없으면 옛 합산 판결(room_id IS NULL)로 떨어진다.
+     * 방별 재판 이전에 만들어진 게시물이 계속 보이게 하기 위한 것이다. 둘 다 없으면 빈 결과다.
+     * 방별 판결을 옛 판결보다 먼저 고른다.
+     */
+    public Optional<VerdictRow> findVerdict(UUID postId, UUID roomId) {
         return jdbc.query("""
-                        SELECT v.id, v.jury_result::text AS jury_result, v.sentence_status, v.sentence::text AS sentence,
+                        SELECT v.id, v.room_id, v.jury_result::text AS jury_result, v.sentence_status, v.sentence::text AS sentence,
                                v.sentencing_reason, v.text_status, v.text_version,
                                v.applied_intensity::text AS applied_intensity, v.default_intensity::text AS default_intensity,
                                m.tag AS meme_tag, m.id AS meme_image_id, m.image_url AS meme_image_url
                           FROM verdicts v
                           LEFT JOIN meme_images m ON m.id = v.meme_image_id
-                         WHERE v.post_id = ?""",
-                (rs, i) -> new VerdictRow(rs.getObject("id", UUID.class), rs.getString("jury_result"),
+                         WHERE v.post_id = ? AND (v.room_id = ? OR v.room_id IS NULL)
+                         ORDER BY v.room_id NULLS LAST
+                         LIMIT 1""",
+                (rs, i) -> new VerdictRow(rs.getObject("id", UUID.class), rs.getObject("room_id", UUID.class),
+                        rs.getString("jury_result"),
                         rs.getString("sentence_status"), rs.getString("sentence"), rs.getString("sentencing_reason"),
                         rs.getString("text_status"), rs.getLong("text_version"), rs.getString("applied_intensity"),
                         rs.getString("default_intensity"), rs.getString("meme_tag"),
                         rs.getObject("meme_image_id", UUID.class), rs.getString("meme_image_url")),
-                postId).stream().findFirst();
+                postId, roomId).stream().findFirst();
     }
 
     public Optional<TextRow> findText(UUID verdictId, String intensity) {

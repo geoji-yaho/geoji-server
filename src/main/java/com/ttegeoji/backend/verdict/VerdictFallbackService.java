@@ -51,7 +51,7 @@ public class VerdictFallbackService {
         if (verdict.getSentenceStatus() == SentenceStatus.FINAL) {
             return false;
         }
-        GenerationQueries.JuryCounts counts = generationQueries.juryCounts(verdict.getPostId());
+        GenerationQueries.JuryCounts counts = generationQueries.juryCounts(verdict.getPostId(), verdict.getRoomId());
         VerdictType result = verdict.getJuryResult();
         Sentence sentence = result == VerdictType.guilty ? fallbackSentence(verdict) : null;
         TemplateCatalog.Rendered rendered = templateCatalog.render(result.name(), counts.juryCount(),

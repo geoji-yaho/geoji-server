@@ -51,7 +51,7 @@ public class VerdictViewAssembler {
             throw PublicApiRejection.notFound();
         }
 
-        Optional<VerdictRow> found = queries.findVerdict(postId);
+        Optional<VerdictRow> found = queries.findVerdict(postId, roomIdOrNull);
         if (found.isEmpty()) {
             return new VerdictViewResponse(SCHEMA_VERSION, postId.toString(), null, "PENDING", "PENDING", 0L, null,
                     POLL_VOTING_MS);
@@ -65,7 +65,9 @@ public class VerdictViewAssembler {
         if ("PENDING".equals(verdict.textStatus()) || "GENERATING".equals(verdict.textStatus())) {
             return response(postId, verdict, null, poll);
         }
-        String intensity = roomIdOrNull == null
+        // 방별 판결은 강도가 그 방 강도 하나뿐이라 applied_intensity 가 곧 그 방 강도다.
+        // 옛 합산 판결만 room_id 로 강도를 갈아 끼운다(그때는 한 판결을 여러 방이 나눠 봤다)
+        String intensity = verdict.roomId() != null || roomIdOrNull == null
                 ? verdict.appliedOrDefaultIntensity()
                 : queries.roomSpiceLevel(roomIdOrNull).orElseThrow(PublicApiRejection::notFound);
         Optional<TextRow> text = queries.findText(verdict.id(), intensity);
@@ -103,7 +105,7 @@ public class VerdictViewAssembler {
     }
 
     TemplateCatalog.Rendered renderTemplate(UUID postId, VerdictRow verdict) {
-        GenerationQueries.JuryCounts counts = generationQueries.juryCounts(postId);
+        GenerationQueries.JuryCounts counts = generationQueries.juryCounts(postId, verdict.roomId());
         return templateCatalog.render(verdict.juryResult(), counts.juryCount(), counts.guiltyCount(), verdict.sentence());
     }
 

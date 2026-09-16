@@ -105,7 +105,7 @@ public class InvalidationScheduler {
             if (texts == null) {
                 continue;
             }
-            GenerationQueries.JuryCounts counts = generationQueries.juryCounts(verdict.postId());
+            GenerationQueries.JuryCounts counts = generationQueries.juryCounts(verdict.postId(), verdict.roomId());
             TemplateCatalog.Rendered rendered = templateCatalog.render(verdict.juryResult(), counts.juryCount(),
                     counts.guiltyCount(), verdict.sentence());
             String statement = Json.write(rendered.statement().stream()

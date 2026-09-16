@@ -33,15 +33,23 @@ public class PostReadQueries {
                           OffsetDateTime createdAt, VerdictType juryStatus) {
     }
 
-    /** 삭제되지 않은 게시물 한 건. 평결이 아직 없으면 juryStatus 는 null */
-    public Optional<PostRow> findPost(UUID postId) {
+    /**
+     * 삭제되지 않은 게시물 한 건. 평결이 아직 없으면 juryStatus 는 null.
+     *
+     * <p>판결은 방마다 따로 생기므로 room_id 로 하나만 고른다. 조건 없이 조인하면 방 수만큼 행이 곱해진다.
+     * 그 방 판결이 없으면 옛 합산 판결(room_id IS NULL)로 떨어진다.
+     */
+    public Optional<PostRow> findPost(UUID postId, UUID roomId) {
         return jdbc.query("""
                         SELECT p.id, p.post_type::text AS post_type, p.amount_krw, p.category, p.item, p.reason,
                                p.author_id, pr.nickname AS author_nickname, p.vote_deadline_at, p.created_at,
                                v.jury_result::text AS jury_result
                           FROM posts p
                           JOIN profiles pr ON pr.id = p.author_id
-                          LEFT JOIN verdicts v ON v.post_id = p.id
+                          LEFT JOIN LATERAL (
+                              SELECT vv.jury_result FROM verdicts vv
+                               WHERE vv.post_id = p.id AND (vv.room_id = ? OR vv.room_id IS NULL)
+                               ORDER BY vv.room_id NULLS LAST LIMIT 1) v ON true
                          WHERE p.id = ? AND p.deleted_at IS NULL""",
                 (rs, i) -> new PostRow(
                         rs.getObject("id", UUID.class),
@@ -55,7 +63,7 @@ public class PostReadQueries {
                         rs.getObject("vote_deadline_at", OffsetDateTime.class),
                         rs.getObject("created_at", OffsetDateTime.class),
                         verdictOf(rs.getString("jury_result"))),
-                postId).stream().findFirst();
+                roomId, postId).stream().findFirst();
     }
 
     /** 철회되지 않은 공유 방 */
@@ -81,13 +89,15 @@ public class PostReadQueries {
      * <p>집계(tally)는 가리지 않는다. 평결을 만든 수 자체라 방마다 다르면 "2인 중 2인이 유죄"
      * 같은 문구와 어긋난다. 숫자는 누가 어느 쪽인지 드러내지 않는다.
      */
-    public List<PostDetailResponse.VoteBrief> visibleVotes(UUID postId, UUID viewerId, boolean isAuthor) {
+    public List<PostDetailResponse.VoteBrief> visibleVotes(UUID postId, UUID viewerId, boolean isAuthor,
+                                                          UUID roomId) {
         return jdbc.query("""
                         SELECT v.id, v.voter_id, pr.nickname AS voter_nickname, v.verdict::text AS verdict,
                                v.reason, v.created_at
                           FROM votes v
                           JOIN profiles pr ON pr.id = v.voter_id
                          WHERE v.post_id = ?
+                           AND (CAST(? AS uuid) IS NULL OR v.room_id = ?)
                            AND (CAST(? AS boolean)
                                 OR EXISTS (SELECT 1 FROM room_members rm
                                             WHERE rm.room_id = v.room_id AND rm.user_id = ?))
@@ -99,27 +109,27 @@ public class PostReadQueries {
                         VerdictType.valueOf(rs.getString("verdict")),
                         rs.getString("reason"),
                         rs.getObject("created_at", OffsetDateTime.class)),
-                postId, isAuthor, viewerId);
+                postId, roomId, roomId, isAuthor, viewerId);
     }
 
-    /** 집계는 방과 무관하게 전체다. 평결을 만든 수 자체다 */
-    public PostDetailResponse.Tally tally(UUID postId) {
+    /** 그 방 집계. 방마다 따로 재판하므로 그 방 표만 센다 */
+    public PostDetailResponse.Tally tally(UUID postId, UUID roomId) {
         return jdbc.queryForObject("""
                 SELECT count(*) FILTER (WHERE verdict IN ('guilty', 'disagree')) AS oppose,
                        count(*) FILTER (WHERE verdict IN ('notGuilty', 'agree')) AS support
-                  FROM votes WHERE post_id = ?""",
+                  FROM votes WHERE post_id = ? AND room_id = ?""",
                 (rs, i) -> new PostDetailResponse.Tally(rs.getInt("oppose"), rs.getInt("support")),
-                postId);
+                postId, roomId);
     }
 
-    /** 투표 가능 인원: 철회되지 않은 공유 방 멤버 합집합에서 작성자를 뺀 수(9/14 정족수 규칙과 같은 모집단) */
-    public int eligibleVoterCount(UUID postId, UUID authorId) {
+    /** 투표 가능 인원: **그 방** 멤버에서 작성자를 뺀 수(방별 정족수와 같은 모집단) */
+    public int eligibleVoterCount(UUID postId, UUID roomId, UUID authorId) {
         Integer count = jdbc.queryForObject("""
-                SELECT count(DISTINCT rm.user_id)
+                SELECT count(*)
                   FROM post_rooms pr
                   JOIN room_members rm ON rm.room_id = pr.room_id
-                 WHERE pr.post_id = ? AND pr.revoked_at IS NULL AND rm.user_id <> ?""",
-                Integer.class, postId, authorId);
+                 WHERE pr.post_id = ? AND pr.room_id = ? AND pr.revoked_at IS NULL AND rm.user_id <> ?""",
+                Integer.class, postId, roomId, authorId);
         return count == null ? 0 : count;
     }
 
@@ -129,13 +139,19 @@ public class PostReadQueries {
                         SELECT p.id, p.post_type::text AS post_type, p.amount_krw, p.category, p.item,
                                p.author_id, pr.nickname AS author_nickname, p.vote_deadline_at, p.created_at,
                                v.jury_result::text AS jury_result,
-                               (SELECT count(*) FROM votes t WHERE t.post_id = p.id AND t.%s) AS oppose,
-                               (SELECT count(*) FROM votes t WHERE t.post_id = p.id AND t.%s) AS support,
-                               EXISTS (SELECT 1 FROM votes t WHERE t.post_id = p.id AND t.voter_id = ?) AS voted
+                               (SELECT count(*) FROM votes t
+                                 WHERE t.post_id = p.id AND t.room_id = rp.room_id AND t.%s) AS oppose,
+                               (SELECT count(*) FROM votes t
+                                 WHERE t.post_id = p.id AND t.room_id = rp.room_id AND t.%s) AS support,
+                               EXISTS (SELECT 1 FROM votes t
+                                        WHERE t.post_id = p.id AND t.room_id = rp.room_id AND t.voter_id = ?) AS voted
                           FROM posts p
                           JOIN post_rooms rp ON rp.post_id = p.id AND rp.room_id = ? AND rp.revoked_at IS NULL
                           JOIN profiles pr ON pr.id = p.author_id
-                          LEFT JOIN verdicts v ON v.post_id = p.id
+                          LEFT JOIN LATERAL (
+                              SELECT vv.jury_result FROM verdicts vv
+                               WHERE vv.post_id = p.id AND (vv.room_id = rp.room_id OR vv.room_id IS NULL)
+                               ORDER BY vv.room_id NULLS LAST LIMIT 1) v ON true
                          WHERE p.deleted_at IS NULL
                          ORDER BY p.created_at DESC
                          LIMIT ?""".formatted(OPPOSE_FILTER, SUPPORT_FILTER),

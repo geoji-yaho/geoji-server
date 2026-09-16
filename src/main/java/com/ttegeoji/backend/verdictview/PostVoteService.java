@@ -55,15 +55,15 @@ public class PostVoteService {
         if (reason.codePointCount(0, reason.length()) > REASON_MAX) {
             throw new PublicApiRejection(HttpStatus.BAD_REQUEST, "투표 사유는 500자 이하여야 합니다.");
         }
-        if (post.deadlinePassed() || queries.verdictExists(postId)) {
+        if (post.deadlinePassed() || queries.verdictExists(postId, request.roomId())) {
             throw new PublicApiRejection(HttpStatus.CONFLICT, "투표가 마감되었습니다.");
         }
-        if (queries.voteExists(postId, voterId)) {
+        if (queries.voteExists(postId, voterId, request.roomId())) {
             throw new PublicApiRejection(HttpStatus.CONFLICT, "이미 투표했습니다.");
         }
 
         InsertedVote vote = queries.insertVote(postId, voterId, request.roomId(), request.verdict(), reason);
-        confirmationService.onVoteCast(postId);
+        confirmationService.onVoteCast(postId, request.roomId());
         return new PostVoteResponse(vote.id().toString(), postId.toString(), request.roomId().toString(),
                 request.verdict(), reason, vote.createdAt());
     }
