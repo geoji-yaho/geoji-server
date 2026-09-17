@@ -36,16 +36,22 @@ public class PostCommentService {
     private final InvalidationService invalidationService;
 
     /**
-     * @param roomId 보고 있는 방. 주면 그 방 댓글만 준다(작성자도 마찬가지다).
-     *               없으면 볼 수 있는 방 전부 — 작성자는 전체, 그 밖에는 자기가 멤버인 방
+     * 댓글 목록. <b>방을 반드시 지정해야 한다.</b>
+     *
+     * <p>게시물은 여러 방에 올라가지만 댓글 스레드는 방마다 따로다. 방을 안 주면 어느 방 대화를
+     * 달라는 것인지 알 수 없어 거부한다. 예전에는 "작성자는 전부" 로 열어 줬는데, 그 틈으로
+     * 작성자 화면에서 두 방 댓글이 한 스레드로 합쳐져 보였다(9/17). 빈 문자열 {@code ?room_id=} 는
+     * Spring 이 null 로 바꾸므로 "안 준 것" 과 같게 취급된다 — 그래서 여기서 막는다.
+     *
+     * @param roomId 보고 있는 방. null 이면 400
      */
     @Transactional(readOnly = true)
     public List<PostCommentResponse> list(UUID postId, UUID userId, UUID roomId) {
-        PostRow post = visiblePost(postId, userId);
-        List<CommentQueries.CommentView> views = roomId == null
-                ? queries.listVisible(postId, userId, post.authorId().equals(userId))
-                : inRoom(postId, userId, roomId);
-        return views.stream().map(PostCommentService::toResponse).toList();
+        visiblePost(postId, userId);
+        if (roomId == null) {
+            throw new PublicApiRejection(HttpStatus.BAD_REQUEST, "어느 방의 댓글인지 room_id 를 지정해 주세요.");
+        }
+        return inRoom(postId, userId, roomId).stream().map(PostCommentService::toResponse).toList();
     }
 
     /** 그 방에서 볼 자격이 있어야 준다. 멤버가 아니면 게시물 자체를 못 본 것과 같게 404 */
@@ -73,7 +79,7 @@ public class PostCommentService {
         }
 
         InsertedComment inserted = queries.insert(postId, roomId, userId, content);
-        if (queries.isJudged(postId)) {
+        if (queries.isJudged(postId, roomId)) {
             // 확정 전 댓글은 retained_at NULL 로 남기고 CommentRetainScheduler 가 확정 뒤 넣는다
             jobEnqueuer.enqueueRetainComment(inserted.id().toString(), inserted.version());
             queries.markRetained(inserted.id());
