@@ -15,7 +15,12 @@ public enum JobKind {
     // 90 은 상한이지 대기 시간이 아니다. 검수가 1회차에 통과하면 40초대에 끝난다.
     SENTENCE(100, 2, 90),
     RETAIN(10, 5, null),
-    TEXT_RETRY(50, 1, 20);
+    // 10 §3 은 20초지만 TEXT_RETRY 는 SENTENCE 와 같은 writer·evaluator 를 다시 돌린다.
+    // 운영 실측(9/17 워커 로그): writer 3.9~5.9초 + evaluator 11.6~13.9초 + finalize 1.5초 ≈ 19~21초라
+    // 대기 0 이어도 20초 안에 끝날 수 없다. 실제로 writer 가 4ms 만에 통과하고(예산 0)
+    // join 이 DEADLINE_EXCEEDED 로 떨어져 재시도가 한 번도 성공한 적이 없다.
+    // SENTENCE 와 같은 그래프이므로 같은 90 을 준다. 상한이지 대기 시간이 아니다
+    TEXT_RETRY(50, 1, 90);
 
     public static final String EVENT_POST_CREATED = "post.created";
     public static final String EVENT_VERDICT_CONFIRMED = "verdict.confirmed";

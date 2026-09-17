@@ -1,6 +1,7 @@
 package com.ttegeoji.backend.verdict;
 
 import com.ttegeoji.backend.jobs.JobEnqueuer;
+import com.ttegeoji.backend.jobs.JobKind;
 import com.ttegeoji.backend.jobs.ReaperScheduler;
 import com.ttegeoji.backend.support.PostgresContainerSupport;
 import com.ttegeoji.backend.util.Json;
@@ -94,7 +95,7 @@ class TextRetrySchedulerTest extends PostgresContainerSupport {
     }
 
     @Test
-    @DisplayName("10 §7 round 1 pending_retry_at 지남 → TEXT_RETRY 1(dedupe text-retry:{v}:{ver}:1·deadline +20s·intensities = TEMPLATE 강도), 예약 비움")
+    @DisplayName("10 §7 round 1 pending_retry_at 지남 → TEXT_RETRY 1(dedupe text-retry:{v}:{ver}:1·deadline = TEXT_RETRY 마감·intensities = TEMPLATE 강도), 예약 비움")
     void dueRoundOneEnqueued() {
         UUID verdictId = templateReady(1, "now() - interval '1 second'", "TEMPLATE_READY");
 
@@ -105,7 +106,9 @@ class TextRetrySchedulerTest extends PostgresContainerSupport {
         Map<String, Object> job = jobs.getFirst();
         assertThat(job.get("dedupe_key")).isEqualTo("text-retry:" + verdictId + ":1:1");
         assertThat(job.get("status")).isEqualTo("QUEUED");
-        assertThat(((Number) job.get("deadline_after_seconds")).doubleValue()).isBetween(19.0, 21.0);
+        double expected = JobKind.TEXT_RETRY.deadlineAfterSeconds();
+        assertThat(((Number) job.get("deadline_after_seconds")).doubleValue())
+                .isBetween(expected - 1, expected + 1);
         assertThat(Json.read((String) job.get("payload"))).isEqualTo(Map.of(
                 "verdict_id", verdictId.toString(), "verdict_version", 1, "round", 1, "intensities", List.of("mild")));
         Map<String, Object> verdict = seed.verdict(verdictId);
