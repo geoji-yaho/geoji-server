@@ -175,7 +175,8 @@ public final class FinalizeRequestParser {
                 "attack_angle", "source"), Set.of());
         List<Statement> statements = new ArrayList<>();
         JsonNode statementNode = node.get("statement");
-        for (JsonNode item : array(statementNode, 2, 4)) {
+        // 새 카드는 1항목, 과거 판결문은 2~4항목이다(10 §5 9/17).
+        for (JsonNode item : array(statementNode, 1, 4)) {
             object(item, Set.of("text", "kind", "evidence_labels"), Set.of());
             statements.add(new Statement(string(item.get("text"), 1, 300), oneOf(item.get("kind"), STATEMENT_KINDS),
                     labels(item.get("evidence_labels"))));

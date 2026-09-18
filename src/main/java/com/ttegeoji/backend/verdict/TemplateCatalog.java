@@ -13,7 +13,7 @@ import tools.jackson.databind.ObjectMapper;
 /**
  * 10 §10 폴백 템플릿. AI 워커가 판결문을 못 만들었을 때 백엔드가 같은 문구를 쓰도록
  * AI 저장소 파일을 바이트 그대로 복사해 버전을 고정한다.
- * 출처: geoji-agent contracts/fixtures/templates-v1.json @ 995c7fb499875332bd75e1c530a81b2660f81a67
+ * 출처: geoji-agent contracts/fixtures/templates-v1.json @ 48c06f834201479fb7403764ca04e6b7508dfe8d
  * 형량은 아직 Sentence enum 이 없어 문자열 코드(probation|oneDay|life)로 받는다.
  */
 @Component

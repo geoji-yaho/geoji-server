@@ -2,6 +2,8 @@ package com.ttegeoji.backend.verdict;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -26,13 +28,13 @@ class TemplateCatalogTest {
     }
 
     @Test
-    @DisplayName("10 §10 guilty(4,3,oneDay) → {n}·{m}·{sentence_label} 치환된 statement 와 sentencingReason")
+    @DisplayName("10 §10 유죄 카드 본문은 짧게, 형량은 sentencingReason으로 전달한다")
     void guiltySubstitution() {
         TemplateCatalog.Rendered rendered = catalog.render("guilty", 4, 3, "oneDay");
 
         assertThat(rendered.statement()).hasSize(1);
         assertThat(rendered.statement().get(0))
-                .isEqualTo("배심원 4인 중 3인이 유죄로 판단했습니다. 형량: 징역 1일 (내일 하루 무지출)");
+                .isEqualTo("배심원단이 이 지출을 유죄로 판단했습니다.");
         assertThat(rendered.sentencingReason()).isEqualTo("형량: 징역 1일 (내일 하루 무지출)");
     }
 
@@ -43,7 +45,20 @@ class TemplateCatalogTest {
         assertThat(catalog.render("agree", 4, 0, null).sentencingReason()).isNull();
         assertThat(catalog.render("disagree", 4, 0, null).sentencingReason()).isNull();
         assertThat(catalog.render("notGuilty", 4, 1, null).statement())
-                .containsExactly("배심원단은 이 지출에 정상 참작의 여지가 있다고 판단했습니다.");
+                .containsExactly("배심원단이 이 지출을 무죄로 판단했습니다.");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"guilty", "notGuilty", "agree", "disagree"})
+    @DisplayName("10 §10 모든 폴백은 제목 20자·본문 1개 30자 이내다")
+    void allFallbacksFitCard(String result) {
+        TemplateCatalog.Rendered rendered = catalog.render(result, 1000, 999,
+                result.equals("guilty") ? "life" : null);
+        assertThat(rendered.headline().codePointCount(0, rendered.headline().length())).isBetween(1, 20);
+        assertThat(rendered.statement()).hasSize(1).allSatisfy(line -> {
+            assertThat(line).isNotBlank().doesNotContain("\n", "\r");
+            assertThat(line.codePointCount(0, line.length())).isBetween(1, 30);
+        });
     }
 
     @Test
