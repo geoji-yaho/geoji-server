@@ -120,7 +120,9 @@ AI 파트(`geoji-agent`)에 전할 내용을 한곳에 모은다. 백엔드가 1
 5. 검수 `texts[]` 에 요청 강도가 빠지면 422
 6. `dossier_id` 의 `post_id` 가 판결 게시물과 다르면 422, dossier·evidence 무효화면 409 `EVIDENCE_INVALIDATED`
 
-그 밖 finalize 검증: `reason_source`·`texts[].source` 필수(AI/TEMPLATE, 누락 422), 길이는 코드포인트(라벨 ≤16·`^F\d+$`, statement 1~300자·2~4개, headline ≤30, reason ≤100, keywords ≤10·≤30자) + 강도별 statement 합산 300, `meme_hints.emotion` 6종 밖 422, `draft_hash`·`evaluation_draft_hash` 둘 다 백엔드 재계산과 비교(계산 불가 — 짝 없는 서로게이트·NaN·Infinity — 도 422).
+그 밖 finalize 검증: `reason_source`·`texts[].source` 필수(AI/TEMPLATE, 누락 422), 길이는 코드포인트(라벨 ≤16·`^F\d+$`, statement 1~300자·1~4개, headline ≤30, reason ≤100, keywords ≤10·≤30자) + 강도별 statement 합산 300, `meme_hints.emotion` 6종 밖 422, `draft_hash`·`evaluation_draft_hash` 둘 다 백엔드 재계산과 비교(계산 불가 — 짝 없는 서로게이트·NaN·Infinity — 도 422).
+
+9/17 카드 규격 연동: geoji-agent `48c06f8`의 새 생성은 제목 20자·본문 1항목 30자다. 백엔드는 최소 항목 수를 2→1로 완화하고 기존 저장 문구의 상한은 유지한다. `templates-v1.json`은 같은 커밋의 짧은 문구로 바이트 동기화했다. 템플릿 JSON 구조·버전 이름은 유지하며 파일 출처 커밋으로 변경을 식별한다. 실제 배포 반영은 이 작업 브랜치의 main 머지 이후다.
 
 ### 4.4 폴백·무효화 문구
 

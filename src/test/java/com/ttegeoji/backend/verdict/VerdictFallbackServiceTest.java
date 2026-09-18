@@ -23,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest
 class VerdictFallbackServiceTest extends PostgresContainerSupport {
 
-    static final String GUILTY_LINE = "배심원 3인 중 2인이 유죄로 판단했습니다. 형량: 징역 1일 (내일 하루 무지출)";
+    static final String GUILTY_LINE = "배심원단이 이 지출을 유죄로 판단했습니다.";
     static final String ONE_DAY_REASON = "형량: 징역 1일 (내일 하루 무지출)";
 
     @Autowired
@@ -70,7 +70,7 @@ class VerdictFallbackServiceTest extends PostgresContainerSupport {
     }
 
     @Test
-    @DisplayName("10 §10 guilty 문구에 {n}·{m}·형량 라벨 치환, 형량 fallback FINAL/RULE·이유 TEMPLATE")
+    @DisplayName("10 §10 guilty 카드 1문장, 형량 fallback FINAL/RULE·이유 TEMPLATE")
     void guiltyTemplateSubstituted() {
         UUID verdictId = seed.pendingVerdict("guilty", 2, 1, "now() + interval '10 seconds'").verdictId();
 

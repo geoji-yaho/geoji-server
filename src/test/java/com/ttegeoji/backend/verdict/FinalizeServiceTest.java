@@ -71,6 +71,35 @@ class FinalizeServiceTest extends PostgresContainerSupport {
     // ---- 최초 SENTENCE ----
 
     @Test
+    @DisplayName("10 §5 새 카드 3강도의 한 문장 본문·근거·검수 hash를 저장한다")
+    void shortCardTextsAreSaved() throws Exception {
+        Case c = newCase();
+        ObjectNode draft;
+        // geoji-agent 48c06f8 contracts/fixtures/writer-draft-card-taxi.json 사본.
+        try (var input = getClass().getResourceAsStream("/contracts/writer-draft-card-taxi.json")) {
+            assertThat(input).isNotNull();
+            draft = (ObjectNode) MAPPER.readTree(input);
+        }
+        FinalizeResult result = service.finalizeVerdict(c.verdictId.toString(),
+                bytes(body(c, draft, sentencing(), evaluation())));
+
+        assertThat(result.textVersion()).isEqualTo(1L);
+        assertThat(jdbc.queryForObject("SELECT text_status FROM verdicts WHERE id = ?", String.class, c.verdictId))
+                .isEqualTo("AI_READY");
+        var texts = jdbc.queryForList("SELECT statement::text AS statement FROM verdict_texts WHERE verdict_id = ?", c.verdictId);
+        assertThat(texts).hasSize(3).allSatisfy(row -> {
+            JsonNode statement = MAPPER.readTree((String) row.get("statement"));
+            assertThat(statement.size()).isEqualTo(1);
+            String text = statement.get(0).get("text").stringValue();
+            assertThat(text.codePointCount(0, text.length())).isBetween(1, 30);
+        });
+        assertThat(jobStatus(c.jobId)).isEqualTo("SUCCEEDED");
+        assertThat(retainCount(c)).isEqualTo(1);
+        assertThat(jdbc.queryForList("SELECT field_path FROM ai.text_evidence_refs WHERE verdict_id = ?",
+                String.class, c.verdictId)).hasSize(3).containsOnly("statement[0]");
+    }
+
+    @Test
     @DisplayName("10 §5 최초 성공 → FINAL/AI·AI_READY·RETAIN 1·job SUCCEEDED·commit record")
     void firstSuccess() {
         Case c = newCase();

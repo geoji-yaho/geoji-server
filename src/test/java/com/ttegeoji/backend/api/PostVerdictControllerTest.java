@@ -39,7 +39,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class PostVerdictControllerTest extends PostgresContainerSupport {
 
     private static final JsonMapper JSON = JsonMapper.builder().build();
-    static final String GUILTY_TEMPLATE_LINE_2_OF_2 = "배심원 2인 중 2인이 유죄로 판단했습니다. 형량: 징역 1일 (내일 하루 무지출)";
+    static final String GUILTY_TEMPLATE_LINE_2_OF_2 = "배심원단이 이 지출을 유죄로 판단했습니다.";
 
     @Autowired
     private MockMvc mockMvc;

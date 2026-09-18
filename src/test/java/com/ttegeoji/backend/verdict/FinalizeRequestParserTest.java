@@ -4,6 +4,8 @@ import com.ttegeoji.backend.config.InternalApiException;
 import com.ttegeoji.backend.verdict.FinalizeRequestParser.FinalizeRequest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpStatus;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -111,6 +113,41 @@ class FinalizeRequestParserTest {
         assertThat(request.draft().memeEmotion()).isEqualTo("DISAPPROVAL");
         assertThat(request.draft().texts().get(1).statement().get(1).evidenceLabels()).containsExactly("F2", "F3");
         assertThat(request.evaluation().texts()).allMatch(FinalizeRequestParser.TextEvaluation::pass);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {1, 2, 3, 4})
+    @DisplayName("10 §5 새 카드 본문 1개와 기존 판결문 2~4개를 모두 허용한다")
+    void acceptsCardAndHistoricalStatementCounts(int count) {
+        ObjectNode body = validBody();
+        for (JsonNode item : body.get("draft").get("texts")) {
+            ArrayNode statements = (ArrayNode) item.get("statement");
+            JsonNode statement = statements.get(0).deepCopy();
+            statements.removeAll();
+            for (int i = 0; i < count; i++) {
+                statements.add(statement.deepCopy());
+            }
+        }
+
+        FinalizeRequest request = FinalizeRequestParser.parse(bytes(body));
+        assertThat(request.draft().texts()).allSatisfy(text -> assertThat(text.statement()).hasSize(count));
+        assertThat(request.draft().memeEmotion()).isEqualTo("DISAPPROVAL");
+        assertThat(request.draft().texts().getFirst().statement().getFirst().evidenceLabels())
+                .containsExactly("F0");
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 5})
+    @DisplayName("10 §5 본문이 없거나 5개 이상이면 422 INVALID_DRAFT")
+    void rejectsStatementCountOutsideContract(int count) {
+        assertInvalid(body -> {
+            ArrayNode statements = (ArrayNode) text(body, 0).get("statement");
+            JsonNode statement = statements.get(0).deepCopy();
+            statements.removeAll();
+            for (int i = 0; i < count; i++) {
+                statements.add(statement.deepCopy());
+            }
+        });
     }
 
     @Test

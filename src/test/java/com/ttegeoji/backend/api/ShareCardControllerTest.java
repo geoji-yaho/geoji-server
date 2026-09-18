@@ -36,7 +36,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ShareCardControllerTest extends PostgresContainerSupport {
 
     private static final JsonMapper JSON = JsonMapper.builder().build();
-    private static final String TEMPLATE_LINE = "배심원 0인 중 0인이 유죄로 판단했습니다. 형량: 징역 1일 (내일 하루 무지출)";
+    private static final String TEMPLATE_LINE = "배심원단이 이 지출을 유죄로 판단했습니다.";
     private static final String PRIVATE_EVIDENCE_TEXT = "비공개근거원문문장";
 
     @Autowired
