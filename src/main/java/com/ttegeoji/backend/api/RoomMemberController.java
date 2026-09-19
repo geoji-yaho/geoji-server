@@ -36,8 +36,16 @@ public class RoomMemberController {
     private final ProfileRepository profileRepository;
     private final DebtScoreQueries debtScoreQueries;
 
+    /**
+     * 방 멤버 목록. 닉네임·거지력이 들어 있어 <b>멤버만</b> 본다(프론트 QA 8, 9/19).
+     * 멤버가 아니면 방 피드와 같은 404 다.
+     */
     @GetMapping
-    public ResponseEntity<List<RoomMemberResponse>> list(@PathVariable UUID roomId) {
+    public ResponseEntity<List<RoomMemberResponse>> list(@AuthenticationPrincipal Jwt jwt,
+                                                         @PathVariable UUID roomId) {
+        if (!roomMemberRepository.existsById_RoomIdAndId_UserId(roomId, CurrentUser.idOf(jwt))) {
+            return ResponseEntity.notFound().build();
+        }
         List<RoomMember> members = roomMemberRepository.findById_RoomId(roomId);
 
         Map<UUID, BigDecimal> scores = debtScoreQueries.forRoom(roomId);
