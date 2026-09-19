@@ -71,6 +71,13 @@ public class GenerationQueries {
     }
 
     /** 잠그지 않고 post_id 만 읽는다. scope key 를 verdict 잠금보다 먼저 알아야 해서 따로 읽는다. 없으면 빈 결과(404). */
+    /** 짤 고르기에 필요한 작성자. 최근에 쓴 짤을 피하는 기준이다(10 §11) */
+    public Optional<UUID> findAuthorId(UUID postId) {
+        return jdbcTemplate.query("SELECT author_id FROM posts WHERE id = ?",
+                        (rs, i) -> rs.getObject("author_id", UUID.class), postId)
+                .stream().findFirst();
+    }
+
     public Optional<UUID> findPostId(UUID verdictId) {
         return jdbcTemplate.query("SELECT post_id FROM verdicts WHERE id = ?",
                 (rs, i) -> rs.getObject("post_id", UUID.class), verdictId).stream().findFirst();

@@ -1,6 +1,7 @@
 package com.ttegeoji.backend.verdict;
 
 import com.ttegeoji.backend.domain.Verdict;
+import com.ttegeoji.backend.domain.enums.TextStatus;
 import com.ttegeoji.backend.jobs.JobKind;
 import com.ttegeoji.backend.repository.VerdictRepository;
 import com.ttegeoji.backend.support.PostgresContainerSupport;
@@ -123,6 +124,59 @@ class VerdictFallbackServiceTest extends PostgresContainerSupport {
      * begin·failed·fallback 테스트가 같이 쓰는 행 INSERT. 커밋된다(autocommit).
      * 게시물마다 새 작성자·방·배심원을 만들어 다른 테스트와 scope key 가 겹치지 않는다.
      */
+    @Test
+    @DisplayName("9/19 템플릿으로 떨어져도 짤은 붙는다 — 유죄 oneDay 는 GUILTY_HEAVY")
+    void templateStillPicksMeme() {
+        UUID meme = seedMeme("GUILTY_HEAVY", "https://cdn.example/heavy.jpg");
+        Seed.Case c = seed.pendingVerdict("guilty", 2, 0, "now() - interval '1 minute'");
+
+        assertThat(apply(c.verdictId(), false)).isTrue();
+
+        Verdict saved = verdictRepository.findById(c.verdictId()).orElseThrow();
+        assertThat(saved.getTextStatus()).isEqualTo(TextStatus.TEMPLATE_READY);
+        assertThat(saved.getMemeImageId()).isEqualTo(meme);
+    }
+
+    @Test
+    @DisplayName("9/19 평결마다 제 태그 짤을 고른다 — 무죄는 NOT_GUILTY")
+    void picksTagForResult() {
+        UUID meme = seedMeme("NOT_GUILTY", "https://cdn.example/notguilty.jpg");
+        Seed.Case c = seed.pendingVerdict("notGuilty", 0, 2, "now() - interval '1 minute'");
+
+        assertThat(apply(c.verdictId(), false)).isTrue();
+
+        UUID picked = verdictRepository.findById(c.verdictId()).orElseThrow().getMemeImageId();
+        assertThat(picked).isEqualTo(meme);
+        assertThat(tagOf(picked)).isEqualTo("NOT_GUILTY");
+    }
+
+    @Test
+    @DisplayName("9/19 그 태그 후보가 하나도 없으면 짤 없이 넘어간다 — 폴백 자체는 성공한다")
+    void noCandidateLeavesMemeNull() {
+        // 컨테이너 DB 를 테스트끼리 공유하므로 이 태그만 잠시 비활성으로 두고 본다
+        jdbc.update("UPDATE meme_images SET is_active = false WHERE tag = 'REJECTED'");
+        Seed.Case c = seed.pendingVerdict("disagree", 0, 2, "now() - interval '1 minute'");
+
+        assertThat(apply(c.verdictId(), false)).isTrue();
+
+        Verdict saved = verdictRepository.findById(c.verdictId()).orElseThrow();
+        assertThat(saved.getTextStatus()).isEqualTo(TextStatus.TEMPLATE_READY);
+        assertThat(saved.getMemeImageId()).isNull();
+    }
+
+    private String tagOf(UUID memeId) {
+        return jdbc.queryForObject("SELECT tag FROM meme_images WHERE id = ?", String.class, memeId);
+    }
+
+    private UUID seedMeme(String tag, String url) {
+        UUID id = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO meme_images (id, tag, strategies, emotions, keywords, image_url, is_active)
+                VALUES (?, ?, '{}'::text[], '{}'::text[], '{}'::text[], ?, true)
+                """, id, tag, url);
+        return id;
+    }
+
     static final class Seed {
 
         record Case(UUID postId, UUID verdictId) {
