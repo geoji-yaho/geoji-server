@@ -18,6 +18,16 @@ jobs:
       - name: Build jar
         run: ./gradlew bootJar
 
+      # jar 만 올리면 .platform 이 빠져 nginx 기본 상한 1MB 가 그대로다(짤 업로드가 413).
+      # EB Java SE 는 zip 안의 jar 하나를 찾아 실행하므로 jar 이름은 그대로 둔다
+      - name: Package with .platform
+        run: |
+          mkdir -p build/bundle
+          cp build/libs/backend-0.0.1-SNAPSHOT.jar build/bundle/
+          cp -r .platform build/bundle/
+          cd build/bundle && zip -qr ../deploy.zip . && cd -
+          unzip -l build/deploy.zip
+
       - name: Deploy to Elastic Beanstalk
         uses: einaregilsson/beanstalk-deploy@v22
         with:
@@ -27,4 +37,4 @@ jobs:
           environment_name: Geoji-server-env
           version_label: ${{ github.sha }}
           region: ap-northeast-2
-          deployment_package: build/libs/backend-0.0.1-SNAPSHOT.jar
+          deployment_package: build/deploy.zip
