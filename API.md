@@ -131,10 +131,14 @@ Supabase Auth 가입만으로는 `profiles`에 행이 생기지 않는다. **로
 
 ### `GET /api/rooms/{roomId}`
 
-방 정보 조회.
+방 정보 조회. **그 방의 멤버만** 볼 수 있다 — 응답에 초대 코드가 들어 있다.
 
 **Response `200`** — `POST /api/rooms` 응답과 동일한 형식
-**Response `404`** — 존재하지 않는 `roomId`
+**Response `404`** — 존재하지 않는 `roomId`, **또는 요청자가 멤버가 아님**
+
+없는 방과 멤버가 아닌 방을 같은 `404`로 답한다. 방이 있는지 여부가 드러나지 않는다
+(방 피드 `GET /api/rooms/{roomId}/posts`와 같은 규칙). 참가 전 미리보기는 아래
+`GET /api/rooms/invite/{inviteCode}`를 쓴다.
 
 ### `GET /api/rooms/invite/{inviteCode}`
 
@@ -554,6 +558,8 @@ MVP 설계서 13장 "시상식 즉시 생성 버튼"용 데모 엔드포인트. 
 
 방 멤버 목록을 거지력(`debtScore`) 높은 순으로 정렬해 반환. 아직 배치가 안 돌아
 `debtScore`가 없는 멤버는 맨 뒤로 밀린다.
+
+**그 방의 멤버만** 볼 수 있다. 멤버가 아니거나 없는 방이면 `404`.
 
 **Response `200`**
 ```json

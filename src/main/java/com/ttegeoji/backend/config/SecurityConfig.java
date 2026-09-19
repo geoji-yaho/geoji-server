@@ -50,10 +50,11 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         // Origin은 스킴+호스트까지만 비교한다. GitHub Pages 저장소 경로(/geoji-web/)는 포함하지 않는다.
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of(
-                "https://geoji-yaho.github.io",
-                "http://localhost:3800"
-        ));
+        config.setAllowedOrigins(List.of("https://geoji-yaho.github.io"));
+        // 계정 둘이 필요한 검증(투표·댓글·방 참여)은 개발 서버를 두 포트에 띄워야 한다.
+        // 포트를 하나씩 더하면 프론트가 매번 백엔드 배포를 기다리므로 localhost 는 패턴으로 연다.
+        // 운영 origin 은 위 목록 그대로다(프론트 요청 1, 9/19)
+        config.setAllowedOriginPatterns(List.of("http://localhost:[*]", "http://127.0.0.1:[*]"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type"));
 

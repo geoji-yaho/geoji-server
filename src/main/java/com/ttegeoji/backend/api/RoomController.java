@@ -84,9 +84,16 @@ public class RoomController {
         return ResponseEntity.status(HttpStatus.CREATED).body(RoomResponse.from(room));
     }
 
+    /**
+     * 방 상세. 응답에 초대 코드가 들어 있어 <b>멤버만</b> 본다(프론트 QA 8, 9/19).
+     * 멤버가 아니면 방이 없을 때와 같은 404 다 — 방 피드와 같은 규칙이고 방의 존재가 드러나지 않는다.
+     * 참가 전 미리보기는 초대 코드로 부르는 {@code GET /api/rooms/invite/{inviteCode}} 가 따로 있다.
+     */
     @GetMapping("/{roomId}")
-    public ResponseEntity<RoomResponse> get(@PathVariable UUID roomId) {
+    public ResponseEntity<RoomResponse> get(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID roomId) {
+        UUID userId = CurrentUser.idOf(jwt);
         return roomRepository.findByIdAndDeletedAtIsNull(roomId)
+                .filter(room -> roomMemberRepository.existsById_RoomIdAndId_UserId(room.getId(), userId))
                 .map(RoomResponse::from)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
