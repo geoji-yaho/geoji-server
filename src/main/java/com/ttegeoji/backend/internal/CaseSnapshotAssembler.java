@@ -119,8 +119,13 @@ public class CaseSnapshotAssembler {
     private CaseSnapshot build(CaseSource source) {
         PostRow post = source.post();
         // 판결이 걸린 job 이면 그 방만 넘긴다. 판결문이 다른 방 규칙을 인용하지 않게 한다
-        List<RoomRow> rooms = queries.findSnapshotRooms(post.id(),
-                source.juryVerdict() == null ? null : source.juryVerdict().roomId());
+        UUID verdictRoomId = source.juryVerdict() == null ? null : source.juryVerdict().roomId();
+        List<RoomRow> rooms = queries.findSnapshotRooms(post.id(), verdictRoomId);
+        // (9/19) privacy_versions 는 방 하나로 좁히지 않는다. finalize 3단계(FinalizeService.privacyVersionsCurrent)가
+        // 공유된 방 전부의 key 를 요구하므로, 방 2개 이상에 올린 게시물은 판결 방 하나만 실으면 첫 finalize 부터
+        // 409 EVIDENCE_INVALIDATED 가 됐다(10 §0.1 9/19). PREPARE(방 전부)와 SENTENCE(방 하나)의 privacy_versions 가
+        // 달라 AI 가 준비 조서를 버리던 것도 같은 원인이다. 방 규칙·강도 인용 제한은 room_snapshots·audience 로 충분하다
+        List<RoomRow> sharedRooms = verdictRoomId == null ? rooms : queries.findSharedRooms(post.id());
 
         List<String> roomIds = rooms.stream().map(room -> room.id().toString()).toList();
         List<RoomSnapshot> roomSnapshots = rooms.stream()
@@ -130,7 +135,7 @@ public class CaseSnapshotAssembler {
         List<String> scopeKeys = new ArrayList<>();
         scopeKeys.add(ScopeKeys.post(post.id()));
         scopeKeys.add(ScopeKeys.user(post.authorId()));
-        rooms.forEach(room -> scopeKeys.add(ScopeKeys.room(room.id())));
+        sharedRooms.forEach(room -> scopeKeys.add(ScopeKeys.room(room.id())));
         List<PrivacyVersion> privacyVersions = privacyEpochs.read(scopeKeys).entrySet().stream()
                 .map(e -> new PrivacyVersion(e.getKey(), e.getValue()))
                 .toList();

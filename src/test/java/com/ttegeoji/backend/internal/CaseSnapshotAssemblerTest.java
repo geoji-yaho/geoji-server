@@ -122,6 +122,29 @@ class CaseSnapshotAssemblerTest extends PostgresContainerSupport {
     }
 
     @Test
+    @DisplayName("9/19 방 2개 게시물의 SENTENCE: room_snapshots·audience 는 판결 방 하나, privacy_versions 는 공유 방 전부(finalize 3단계와 같은 key)")
+    void sentenceKeepsAllRoomsInPrivacyVersions() {
+        UUID roomA = fx.room(author, "spicy", 1);
+        UUID roomB = fx.room(author, "hell", 1);
+        UUID post = sharedPost("spent", roomA, roomB);
+        fx.vote(post, roomA, "guilty");
+        UUID verdict = fx.verdict(post, "guilty");
+        jdbcTemplate.update("UPDATE verdicts SET room_id = ? WHERE id = ?", roomA, verdict);
+
+        JsonNode n = snapshot(JobKind.SENTENCE, InternalFixtures.sentencePayload(verdict, post));
+
+        List<String> roomIds = new ArrayList<>();
+        n.get("audience").get("room_ids").forEach(r -> roomIds.add(r.stringValue()));
+        assertThat(roomIds).containsExactly(roomA.toString());
+        assertThat(n.get("room_snapshots")).hasSize(1);
+        assertThat(n.get("room_snapshots").get(0).get("room_id").stringValue()).isEqualTo(roomA.toString());
+        List<String> scopeKeys = new ArrayList<>();
+        n.get("privacy_versions").forEach(pv -> scopeKeys.add(pv.get("scope_key").stringValue()));
+        assertThat(scopeKeys).containsExactlyInAnyOrder(ScopeKeys.post(post), ScopeKeys.user(author),
+                ScopeKeys.room(roomA), ScopeKeys.room(roomB));
+    }
+
+    @Test
     @DisplayName("10 §4.1·§3 TEXT_RETRY 는 payload 에 post_id 가 없어 verdict 로 post 를 찾고 jury 를 채운다")
     void textRetryFindsPostThroughVerdict() {
         UUID room = fx.room(author, "hell", 1);
