@@ -36,6 +36,16 @@ geoji:
     base-url: ${AI_API_BASE_URL:}
   # finalize 의 guardrail_policy_version 비교값(10 §5·§16.1)
   guardrail-policy-version: ${GUARDRAIL_POLICY_VERSION:}
+  # 관리자 짤 업로드(10 §16.5). 버킷·리전이 비면 업로드만 503 이고 기동은 한다.
+  # 자격증명은 여기 두지 않는다 — EB 인스턴스 프로파일을 기본 제공자 체인이 읽는다
+  media:
+    bucket: ${GEOJI_MEDIA_S3_BUCKET:}
+    region: ${GEOJI_MEDIA_S3_REGION:}
+    key-prefix: ${GEOJI_MEDIA_S3_PREFIX:memes}
+    # CloudFront 를 앞에 두면 그 주소. 비면 S3 가상호스트 주소를 쓴다
+    public-base-url: ${GEOJI_MEDIA_PUBLIC_BASE_URL:}
+    # 업로드를 허용할 profiles.id 목록(쉼표 구분). 비면 아무도 못 올린다
+    admin-ids: ${GEOJI_MEDIA_ADMIN_IDS:}
 
 logging:
   level:

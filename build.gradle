@@ -19,6 +19,9 @@ repositories {
 }
 
 dependencies {
+	// 짤 업로드 저장소(10 §16.5). 자격증명은 EB 인스턴스 프로파일에서 기본 체인으로 읽는다
+	implementation platform('software.amazon.awssdk:bom:2.28.29')
+	implementation 'software.amazon.awssdk:s3'
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-resource-server'

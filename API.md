@@ -1185,3 +1185,64 @@ S-11 판결 공유 카드. 방 밖으로 나갈 수 있는 문구와 이미지 m
 | 남의 댓글(게시물 작성자여도) | 403 | `{ "message": "본인 댓글만 삭제할 수 있습니다." }` |
 | `postId`·`commentId` 가 UUID 아님 | 400 | Spring 기본 에러 형식 |
 | JWT 없음 | 401 | - |
+
+## 14. 관리자 짤 업로드
+
+10 §16.5. 판결 짤 후보를 올린다. 모델을 부르지 않으므로 OpenAI·xAI 키가 없어도 동작한다.
+
+### `POST /api/admin/memes`
+
+관리자 JWT + `multipart/form-data`.
+
+| 파트 | 필수 | 설명 |
+|---|---|---|
+| `file` | O | PNG 또는 JPEG. 8MiB 이하, 한 변 4096px 이하, 전체 16Mpx 이하 |
+| `tag` | O | `GUILTY_HEAVY` `GUILTY_LIGHT` `NOT_GUILTY` `APPROVED` `REJECTED` |
+| `strategies` | - | 쉼표 구분. 드립 전략 8종 |
+| `emotions` | - | 쉼표 구분. 감정 6종(10 §11) |
+| `keywords` | - | 쉼표 구분. 16개 이하, 항목당 40자 이하 |
+
+형식은 **파일명·Content-Type 이 아니라 바이트로** 판정한다. 저장 키도 서버가 바이트의
+SHA-256 으로 짓는다. 보낸 파일명은 쓰지 않는다.
+
+**Response `201`** — 새 후보를 만들었다
+
+```json
+{
+  "id": "0f9c1e2a-...",
+  "tag": "NOT_GUILTY",
+  "imageUrl": "https://.../memes/9f2b....png",
+  "assetKey": "9f2b...",
+  "active": true
+}
+```
+
+**Response `200`** — 같은 파일을 다시 올렸다. 새 후보를 만들지 않고 기존 것을 그대로 준다
+
+올린 짤은 바로 후보가 된다(`active: true`). 계약의 검수·활성화 단계는 두지 않았다(9/19 결정).
+잘못 올렸으면 `meme_images.is_active` 를 내린다.
+
+**오류**
+
+| 상황 | 상태 코드 | 바디 |
+|---|---|---|
+| allowlist 에 없는 사용자 | 403 | `{ "message": "짤을 올릴 권한이 없습니다." }` |
+| 저장소 미설정 | 503 | `{ "message": "이미지 저장소가 설정되지 않았습니다." }` |
+| PNG·JPEG 아님 | 415 | `{ "message": "PNG 또는 JPEG 만 올릴 수 있습니다." }` |
+| 8MiB 초과 | 413 | `{ "message": "이미지는 8MiB 이하여야 합니다." }` |
+| 해상도 초과·디코딩 실패·빈 파일 | 400 | `{ "message": "..." }` |
+| 모르는 `tag`·`emotions`·`strategies` | 400 | `{ "message": "..." }` |
+| 저장소 오류 | 502 | `{ "message": "이미지 저장소에 올리지 못했습니다." }` |
+| JWT 없음 | 401 | - |
+
+### 설정
+
+| 환경변수 | 설명 |
+|---|---|
+| `GEOJI_MEDIA_S3_BUCKET` | 버킷 이름. 비면 업로드만 503 이고 기동은 한다 |
+| `GEOJI_MEDIA_S3_REGION` | 예: `ap-northeast-2` |
+| `GEOJI_MEDIA_S3_PREFIX` | 버킷 안 경로. 기본 `memes` |
+| `GEOJI_MEDIA_PUBLIC_BASE_URL` | CloudFront 주소. 비면 S3 가상호스트 주소를 쓴다 |
+| `GEOJI_MEDIA_ADMIN_IDS` | 업로드를 허용할 `profiles.id` 쉼표 목록. 비면 아무도 못 올린다 |
+
+AWS 자격증명은 설정에 두지 않는다. 기본 제공자 체인이 EB 인스턴스 프로파일에서 읽는다.
