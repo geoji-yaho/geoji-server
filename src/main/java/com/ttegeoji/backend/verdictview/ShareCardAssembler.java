@@ -3,7 +3,6 @@ package com.ttegeoji.backend.verdictview;
 import com.ttegeoji.backend.privacy.VerdictReadGuard;
 import com.ttegeoji.backend.privacy.VerdictReadGuard.Decision;
 import com.ttegeoji.backend.verdict.TemplateCatalog;
-import com.ttegeoji.backend.verdictview.VerdictViewQueries.EvidenceRef;
 import com.ttegeoji.backend.verdictview.VerdictViewQueries.PostRow;
 import com.ttegeoji.backend.verdictview.VerdictViewQueries.TextRow;
 import com.ttegeoji.backend.verdictview.VerdictViewQueries.VerdictRow;
@@ -12,7 +11,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -34,6 +32,12 @@ public class ShareCardAssembler {
     /**
      * @param roomIdOrNull 어느 방 판결로 카드를 만들지. 방마다 따로 재판하므로 필요하다.
      *                     없으면 옛 합산 판결만 찾는다(방별 재판 이전 게시물).
+     *
+     * <p>9/19 사용자 결정: 카드에도 AI 제목·본문을 그대로 쓴다. 전에는 본문이 인용한 근거 중
+     * 공개 불가가 하나라도 있으면 본문과 제목을 템플릿으로 내렸는데, 좋은 판결문일수록 방 규칙과
+     * 과거 지출을 인용해서 거의 모든 카드가 "유죄 / 배심원단이 …" 로만 나왔다.
+     * <b>카드를 방 밖으로 공유하면 방 규칙이 함께 나갈 수 있다.</b> 그것을 감수한 선택이다.
+     * 삭제·철회 뒤 읽기 차단(BLOCKED)은 그대로 둔다 — 그건 근거 공개 여부가 아니라 무효화다.
      */
     public ShareCardResponse assemble(UUID postId, UUID userId, UUID roomIdOrNull) {
         PostRow post = queries.findPost(postId)
@@ -58,11 +62,8 @@ public class ShareCardAssembler {
                 throw PublicApiRejection.notFound();
             }
             if (decision == Decision.ORIGINAL && !VerdictViewAssembler.SOURCE_TEMPLATE.equals(text.get().source())) {
-                List<String> ai = VerdictViewAssembler.statementTexts(text.get().statementJson());
-                List<EvidenceRef> refs = queries.evidenceRefs(verdict.id(), intensity, text.get().textVersion());
-                statement = mergePublic(ai, refs, template.statement());
-                // 한 문장이라도 템플릿으로 바뀌면 AI 헤드라인이 가린 문장을 요약할 수 있어 템플릿 헤드라인으로
-                headline = allPublic(ai.size(), refs) ? text.get().headline() : template.headline();
+                statement = VerdictViewAssembler.statementTexts(text.get().statementJson());
+                headline = text.get().headline();
             }
         }
 
@@ -70,30 +71,4 @@ public class ShareCardAssembler {
                 statement, verdict.sentence(), sentenceLabels.labelOf(verdict.sentence()), viewAssembler.meme(verdict));
     }
 
-    /** 문장 j 의 인용이 하나라도 공개 불가면 템플릿 statement[j](넘치면 마지막 문장)로 바꾼다 */
-    static List<String> mergePublic(List<String> ai, List<EvidenceRef> refs, List<String> template) {
-        List<String> merged = new ArrayList<>(ai.size());
-        for (int j = 0; j < ai.size(); j++) {
-            if (sentencePublic(j, refs)) {
-                merged.add(ai.get(j));
-            } else {
-                merged.add(template.get(Math.min(j, template.size() - 1)));
-            }
-        }
-        return merged;
-    }
-
-    private static boolean allPublic(int sentences, List<EvidenceRef> refs) {
-        for (int j = 0; j < sentences; j++) {
-            if (!sentencePublic(j, refs)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static boolean sentencePublic(int j, List<EvidenceRef> refs) {
-        String path = "statement[" + j + "]";
-        return refs.stream().filter(r -> path.equals(r.fieldPath())).allMatch(EvidenceRef::publicUsable);
-    }
 }

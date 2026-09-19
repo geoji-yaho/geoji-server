@@ -98,24 +98,22 @@ class ShareCardControllerTest extends PostgresContainerSupport {
     }
 
     @Test
-    @DisplayName("10 §9 ROOMS 근거를 인용한 문장만 템플릿 문장으로, 헤드라인은 템플릿")
-    void roomsEvidenceReplacedByTemplate() throws Exception {
+    @DisplayName("9/19 ROOMS 근거를 인용해도 AI 문장·AI 헤드라인 그대로 — 카드가 방 규칙을 품는다")
+    void roomsEvidenceKeepsAi() throws Exception {
         UUID verdict = aiVerdict();
         f.ref(verdict, 3, "mild", "statement[0]", f.evidence(post, "F0", "PUBLIC", "공개 근거"));
-        f.ref(verdict, 3, "mild", "statement[1]", f.evidence(post, "F1", "PUBLIC", "공개 근거 2"));
         f.ref(verdict, 3, "mild", "statement[1]", f.evidence(post, "F2", "ROOMS", PRIVATE_EVIDENCE_TEXT));
 
         mockMvc.perform(get(url(post)).with(as(author)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.headline").value("유죄"))
+                .andExpect(jsonPath("$.headline").value("AI 헤드라인"))
                 .andExpect(jsonPath("$.statement[0]").value("AI 공개 문장"))
-                // 템플릿은 한 문장뿐이라 넘치는 자리는 마지막 템플릿 문장
-                .andExpect(jsonPath("$.statement[1]").value(TEMPLATE_LINE));
+                .andExpect(jsonPath("$.statement[1]").value("AI 둘째 문장"));
     }
 
     @Test
-    @DisplayName("10 §9 PRIVATE·scope 없음·무효화된 근거도 공개 불가 → 그 문장 템플릿")
-    void nonPublicVariantsReplaced() throws Exception {
+    @DisplayName("9/19 PRIVATE·scope 없음·무효화된 근거를 인용해도 AI 문장 그대로")
+    void nonPublicVariantsKeepAi() throws Exception {
         UUID verdict = aiVerdict();
         f.ref(verdict, 3, "mild", "statement[0]", f.evidence(post, "F0", null, "scope 없음"));
         UUID invalidated = f.evidence(post, "F1", "PUBLIC", "무효화됨");
@@ -124,9 +122,9 @@ class ShareCardControllerTest extends PostgresContainerSupport {
 
         mockMvc.perform(get(url(post)).with(as(author)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.headline").value("유죄"))
-                .andExpect(jsonPath("$.statement[0]").value(TEMPLATE_LINE))
-                .andExpect(jsonPath("$.statement[1]").value(TEMPLATE_LINE));
+                .andExpect(jsonPath("$.headline").value("AI 헤드라인"))
+                .andExpect(jsonPath("$.statement[0]").value("AI 공개 문장"))
+                .andExpect(jsonPath("$.statement[1]").value("AI 둘째 문장"));
     }
 
     @Test
@@ -170,8 +168,9 @@ class ShareCardControllerTest extends PostgresContainerSupport {
         assertThat(root.propertyNames().stream().collect(Collectors.toSet())).isEqualTo(Set.of(
                 "postId", "postType", "juryStatus", "intensity", "headline", "statement", "sentence", "sentenceLabel",
                 "meme"));
+        // 근거 원문·금액·item·투표 사유·양형 이유는 카드에 없다. AI 문장 자체는 9/19 부터 그대로 나간다
         assertThat(body).doesNotContain(PRIVATE_EVIDENCE_TEXT, "비밀마라탕", "야근했음", "투표사유비밀",
-                "AI 양형 이유 비공개", "AI 둘째 문장");
+                "AI 양형 이유 비공개");
     }
 
     @Test
