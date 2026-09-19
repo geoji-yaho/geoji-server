@@ -44,4 +44,8 @@ public class MemeImage {
     @Builder.Default
     @Column(name = "is_active", nullable = false)
     private Boolean active = true;
+
+    // 업로드 바이트의 SHA-256(10 §16.5). 시드로 넣은 옛 행은 자산 이름이고, 둘 다 유니크다
+    @Column(name = "asset_key")
+    private String assetKey;
 }

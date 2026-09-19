@@ -1,5 +1,6 @@
 package com.ttegeoji.backend.config;
 
+import com.ttegeoji.backend.media.MediaProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -12,7 +13,7 @@ import java.time.Duration;
 
 // 백엔드 → AI API(10 §4·§16.2). 호출 클래스는 ai/ 패키지가 이 빈을 주입받아 만든다.
 @Configuration
-@EnableConfigurationProperties(GeojiProperties.class)
+@EnableConfigurationProperties({GeojiProperties.class, MediaProperties.class})
 public class AiApiClientConfig {
 
     // connect 0.5초(10 §4.7 공통). read 타임아웃은 엔드포인트별이라 호출 클래스가 정한다.
