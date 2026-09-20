@@ -140,13 +140,15 @@ class VerdictFallbackServiceTest extends PostgresContainerSupport {
     @Test
     @DisplayName("9/19 평결마다 제 태그 짤을 고른다 — 무죄는 NOT_GUILTY")
     void picksTagForResult() {
-        UUID meme = seedMeme("NOT_GUILTY", "https://cdn.example/notguilty.jpg");
+        seedMeme("NOT_GUILTY", "https://cdn.example/notguilty.jpg");
         Seed.Case c = seed.pendingVerdict("notGuilty", 0, 2, "now() - interval '1 minute'");
 
         assertThat(apply(c.verdictId(), false)).isTrue();
 
+        // 컨테이너 DB 를 테스트끼리 공유해 같은 태그 후보가 여럿이다. 어느 것을 골랐는지가 아니라
+        // "그 평결의 태그에서 골랐는지" 를 본다
         UUID picked = verdictRepository.findById(c.verdictId()).orElseThrow().getMemeImageId();
-        assertThat(picked).isEqualTo(meme);
+        assertThat(picked).isNotNull();
         assertThat(tagOf(picked)).isEqualTo("NOT_GUILTY");
     }
 
