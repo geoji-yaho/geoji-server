@@ -95,7 +95,7 @@ class ServiceTokenFilterTest extends PostgresContainerSupport {
     @DisplayName("10 §4.7 설정값이 비었으면 맞는 헤더도 401 — 열어 두지 않는다")
     void emptyConfiguredToken(String configured) throws Exception {
         ServiceTokenFilter filter = new ServiceTokenFilter(new GeojiProperties(
-                new GeojiProperties.Internal(configured), new GeojiProperties.Ai(null), null));
+                new GeojiProperties.Internal(configured), new GeojiProperties.Ai(null), null, null));
 
         for (String authorization : new String[]{"Bearer " + configured, "Bearer ", "Bearer test-token"}) {
             MockHttpServletRequest request = new MockHttpServletRequest("GET", "/internal/v1/probe");
@@ -111,7 +111,7 @@ class ServiceTokenFilterTest extends PostgresContainerSupport {
         }
 
         ServiceTokenFilter unset = new ServiceTokenFilter(new GeojiProperties(
-                new GeojiProperties.Internal(null), new GeojiProperties.Ai(null), null));
+                new GeojiProperties.Internal(null), new GeojiProperties.Ai(null), null, null));
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/internal/v1/probe");
         request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer ");
         MockHttpServletResponse response = new MockHttpServletResponse();

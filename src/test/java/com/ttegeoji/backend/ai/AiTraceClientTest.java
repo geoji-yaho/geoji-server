@@ -58,7 +58,7 @@ class AiTraceClientTest {
 
     private static RestClient aiApiRestClient(String baseUrl) {
         GeojiProperties properties = new GeojiProperties(
-                new GeojiProperties.Internal("test-token"), new GeojiProperties.Ai(baseUrl), "guardrail-v2");
+                new GeojiProperties.Internal("test-token"), new GeojiProperties.Ai(baseUrl), "guardrail-v2", null);
         return new AiApiClientConfig().aiApiRestClient(properties);
     }
 

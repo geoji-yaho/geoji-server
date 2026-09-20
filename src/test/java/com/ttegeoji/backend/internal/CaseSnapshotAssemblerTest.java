@@ -93,6 +93,26 @@ class CaseSnapshotAssemblerTest extends PostgresContainerSupport {
     }
 
     @Test
+    @DisplayName("19 §4 JURY_VOTE 스냅샷은 PREPARE 와 같다 — jury=null, room_snapshots·audience.room_ids 는 공유 방 전부")
+    void juryVoteLooksLikePrepare() {
+        UUID roomA = fx.room(author, "spicy", 1);
+        UUID roomB = fx.room(author, "mild", 1);
+        UUID post = sharedPost("considering", roomA, roomB);
+        UUID juror = fx.aiJuror();
+        fx.member(roomA, juror);
+
+        JsonNode jury = snapshot(JobKind.JURY_VOTE, InternalFixtures.juryVotePayload(post, roomA, juror));
+        JsonNode prepare = snapshot(JobKind.PREPARE, InternalFixtures.preparePayload(post));
+
+        assertThat(jury.get("jury").isNull()).isTrue();
+        assertThat(jury.get("post_id").stringValue()).isEqualTo(post.toString());
+        assertThat(jury.get("room_snapshots").size()).isEqualTo(2);
+        assertThat(jury.get("audience").get("room_ids").size()).isEqualTo(2);
+        assertThat(jury.get("privacy_versions")).isEqualTo(prepare.get("privacy_versions"));
+        assertThat(jury.get("room_snapshots")).isEqualTo(prepare.get("room_snapshots"));
+    }
+
+    @Test
     @DisplayName("10 §4.1 §0.1 9/11 SENTENCE 는 jury 를 채우고 guilty 3·notGuilty 1 → guilty_ratio 0.75(백분율 아님)")
     void sentenceFillsJury() {
         UUID room = fx.room(author, "spicy", 1);
@@ -357,8 +377,8 @@ class CaseSnapshotAssemblerTest extends PostgresContainerSupport {
     }
 
     @ParameterizedTest
-    @EnumSource(value = JobKind.class, names = {"PREPARE", "SENTENCE", "TEXT_RETRY"})
-    @DisplayName("10 §4.1 PREPARE·SENTENCE·TEXT_RETRY 도 삭제된 게시물 → 404 NOT_FOUND(9/15 답 10)")
+    @EnumSource(value = JobKind.class, names = {"PREPARE", "SENTENCE", "TEXT_RETRY", "JURY_VOTE"})
+    @DisplayName("10 §4.1 PREPARE·SENTENCE·TEXT_RETRY·JURY_VOTE 도 삭제된 게시물 → 404 NOT_FOUND(9/15 답 10, 19 §4)")
     void deletedPostNotFoundForEveryKind(JobKind kind) {
         UUID room = fx.room(author, "spicy", 1);
         UUID post = sharedPost("spent", room);
@@ -367,6 +387,7 @@ class CaseSnapshotAssemblerTest extends PostgresContainerSupport {
         String payload = switch (kind) {
             case PREPARE -> InternalFixtures.preparePayload(post);
             case SENTENCE -> InternalFixtures.sentencePayload(verdict, post);
+            case JURY_VOTE -> InternalFixtures.juryVotePayload(post, room, fx.aiJuror());
             default -> InternalFixtures.textRetryPayload(verdict);
         };
 

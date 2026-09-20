@@ -91,6 +91,16 @@ public class JobEnqueuer {
                 verdictId, verdictVersion, payload, traceId);
     }
 
+    /**
+     * 19 §3 게시물 저장 트랜잭션에서 봇이 멤버인 공유 방마다 1개. dedupe 는 post·room·voter 조합이라
+     * 같은 글이 같은 방에 다시 INSERT 돼도 1개다. aggregate 는 PREPARE 와 같이 post_id / post_version.
+     */
+    public EnqueuedJob enqueueJuryVote(String postId, long postVersion, String roomId, String voterId) {
+        return insert(JobKind.JURY_VOTE, JobKind.EVENT_JURY_VOTE_REQUESTED,
+                "jury-vote:" + postId + ":" + roomId + ":" + voterId,
+                postId, postVersion, JobPayloads.juryVote(postId, postVersion, roomId, voterId), null);
+    }
+
     private EnqueuedJob insert(JobKind kind, String eventType, String dedupeKey, String aggregateId,
                                long aggregateVersion, Map<String, Object> payload, String traceId) {
         // deadline 식은 enum 상수에서만 만든다(입력값이 SQL 에 섞이지 않는다). now() 는 10 §3 SQL 그대로 DB 시각

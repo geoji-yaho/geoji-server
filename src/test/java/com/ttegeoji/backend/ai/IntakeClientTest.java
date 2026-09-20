@@ -56,7 +56,7 @@ class IntakeClientTest {
     private IntakeClient client;
 
     private static GeojiProperties properties(String baseUrl, String token) {
-        return new GeojiProperties(new GeojiProperties.Internal(token), new GeojiProperties.Ai(baseUrl), "guardrail-v2");
+        return new GeojiProperties(new GeojiProperties.Internal(token), new GeojiProperties.Ai(baseUrl), "guardrail-v2", null);
     }
 
     @BeforeEach

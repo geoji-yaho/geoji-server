@@ -77,7 +77,8 @@ public class CaseSnapshotAssembler {
         Map<String, Object> payload = readJsonb(job.payload(), new TypeReference<>() {
         });
         CaseSource source = switch (job.kind()) {
-            case PREPARE -> new CaseSource(requirePost(uuid(payload, "post_id")), null, null, null);
+            // JURY_VOTE 는 PREPARE 와 같은 모양(19 §4). jury=null, 방·privacy_versions 는 공유 방 전부
+            case PREPARE, JURY_VOTE -> new CaseSource(requirePost(uuid(payload, "post_id")), null, null, null);
             case SENTENCE -> new CaseSource(requirePost(uuid(payload, "post_id")),
                     requireVerdict(uuid(payload, "verdict_id")), null, null);
             case TEXT_RETRY -> {

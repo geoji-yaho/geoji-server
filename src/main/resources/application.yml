@@ -44,6 +44,8 @@ geoji:
     base-url: ${AI_API_BASE_URL:}
   # finalize 의 guardrail_policy_version 비교값(10 §5·§16.1)
   guardrail-policy-version: ${GUARDRAIL_POLICY_VERSION:}
+  # 데모 AI 배심원 떼거지봇의 profiles.id(19 §2). 비면 JURY_VOTE job 을 만들지 않고 ai-member 는 503
+  ai-juror-user-id: ${GEOJI_AI_JUROR_USER_ID:}
   # 관리자 짤 업로드(10 §16.5). 버킷·리전이 비면 업로드만 503 이고 기동은 한다.
   # 자격증명은 여기 두지 않는다 — EB 인스턴스 프로파일을 기본 제공자 체인이 읽는다
   media:
