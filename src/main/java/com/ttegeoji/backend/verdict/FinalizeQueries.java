@@ -21,7 +21,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class FinalizeQueries {
 
-    public record VerdictHeader(UUID verdictId, UUID postId, UUID authorId) {
+    /** @param roomId 방별 판결의 방. 옛 합산 판결은 null */
+    public record VerdictHeader(UUID verdictId, UUID postId, UUID authorId, UUID roomId) {
     }
 
     public record PostState(boolean deleted) {
@@ -44,11 +45,11 @@ public class FinalizeQueries {
     /** 잠그기 전에 scope key 를 만들려고 읽는다. 잠금 뒤 값은 다시 확인한다 */
     public Optional<VerdictHeader> findVerdictHeader(UUID verdictId) {
         return jdbcTemplate.query("""
-                        SELECT v.id, v.post_id, p.author_id
+                        SELECT v.id, v.post_id, v.room_id, p.author_id
                           FROM verdicts v JOIN posts p ON p.id = v.post_id
                          WHERE v.id = ?""",
                 (rs, i) -> new VerdictHeader(rs.getObject("id", UUID.class), rs.getObject("post_id", UUID.class),
-                        rs.getObject("author_id", UUID.class)), verdictId)
+                        rs.getObject("author_id", UUID.class), rs.getObject("room_id", UUID.class)), verdictId)
                 .stream().findFirst();
     }
 

@@ -71,6 +71,22 @@ class FinalizeServiceTest extends PostgresContainerSupport {
     // ---- 최초 SENTENCE ----
 
     @Test
+    @DisplayName("9/19 방별 판결은 그 방 scope 만 요구한다 — 여러 방에 올린 글도 finalize 된다")
+    void roomScopedVerdictNeedsOnlyItsRoom() {
+        Case c = newCase();
+        // 방별 판결로 만든다. 스냅샷은 이 방 하나만 담아 보내므로 privacy_versions 도 그 방까지다
+        UUID room = c.roomIds.get(0);
+        jdbc.update("UPDATE verdicts SET room_id = ? WHERE id = ?", room, c.verdictId);
+
+        FinalizeResult result = service.finalizeVerdict(c.verdictId.toString(),
+                bytes(body(c, draft(), sentencing(), evaluation(), List.of(room))));
+
+        assertThat(result.textVersion()).isEqualTo(1L);
+        assertThat(jdbc.queryForObject("SELECT text_status FROM verdicts WHERE id = ?", String.class, c.verdictId))
+                .isEqualTo("AI_READY");
+    }
+
+    @Test
     @DisplayName("10 §5 새 카드 3강도의 한 문장 본문·근거·검수 hash를 저장한다")
     void shortCardTextsAreSaved() throws Exception {
         Case c = newCase();
@@ -678,6 +694,20 @@ class FinalizeServiceTest extends PostgresContainerSupport {
     }
 
     /** draft_hash·evaluation_draft_hash 는 넘긴 draft·sentencing 으로 계산한다. privacy_versions 는 지금 epoch */
+    /** 방을 지정하면 그 방 scope 만 privacy_versions 에 담는다(방별 판결 스냅샷과 같은 모양) */
+    private ObjectNode body(Case c, ObjectNode draft, ObjectNode sentencingOrNull, ObjectNode evaluation,
+                            List<UUID> scopeRooms) {
+        List<UUID> all = new ArrayList<>(c.roomIds);
+        c.roomIds.clear();
+        c.roomIds.addAll(scopeRooms);
+        try {
+            return body(c, draft, sentencingOrNull, evaluation);
+        } finally {
+            c.roomIds.clear();
+            c.roomIds.addAll(all);
+        }
+    }
+
     private ObjectNode body(Case c, ObjectNode draft, ObjectNode sentencingOrNull, ObjectNode evaluation) {
         String hash = DraftHash.sha256Hex(draft, sentencingOrNull);
         ObjectNode body = MAPPER.createObjectNode();
