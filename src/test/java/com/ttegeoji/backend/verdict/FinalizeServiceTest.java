@@ -71,19 +71,29 @@ class FinalizeServiceTest extends PostgresContainerSupport {
     // ---- 최초 SENTENCE ----
 
     @Test
-    @DisplayName("9/19 방별 판결은 그 방 scope 만 요구한다 — 여러 방에 올린 글도 finalize 된다")
-    void roomScopedVerdictNeedsOnlyItsRoom() {
+    @DisplayName("9/20 방별 판결도 공유 방 전부의 privacy_versions 를 싣는다 — 여러 방 글이 finalize 된다")
+    void roomScopedVerdictCarriesEveryRoom() {
         Case c = newCase();
-        // 방별 판결로 만든다. 스냅샷은 이 방 하나만 담아 보내므로 privacy_versions 도 그 방까지다
-        UUID room = c.roomIds.get(0);
-        jdbc.update("UPDATE verdicts SET room_id = ? WHERE id = ?", room, c.verdictId);
+        jdbc.update("UPDATE verdicts SET room_id = ? WHERE id = ?", c.roomIds.get(0), c.verdictId);
 
+        // 스냅샷(#39)이 싣는 대로 방 전부를 넣는다
         FinalizeResult result = service.finalizeVerdict(c.verdictId.toString(),
-                bytes(body(c, draft(), sentencing(), evaluation(), List.of(room))));
+                bytes(body(c, draft(), sentencing(), evaluation())));
 
         assertThat(result.textVersion()).isEqualTo(1L);
         assertThat(jdbc.queryForObject("SELECT text_status FROM verdicts WHERE id = ?", String.class, c.verdictId))
                 .isEqualTo("AI_READY");
+    }
+
+    @Test
+    @DisplayName("9/20 방 하나만 실으면 거부한다 — #38 처럼 좁히면 나머지 방 key 가 빠져 막힌다")
+    void oneRoomOnlyIsRejected() {
+        Case c = newCase();
+        jdbc.update("UPDATE verdicts SET room_id = ? WHERE id = ?", c.roomIds.get(0), c.verdictId);
+
+        assertThatThrownBy(() -> service.finalizeVerdict(c.verdictId.toString(),
+                bytes(body(c, draft(), sentencing(), evaluation(), List.of(c.roomIds.get(0))))))
+                .hasMessageContaining("EVIDENCE_INVALIDATED");
     }
 
     @Test

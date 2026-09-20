@@ -109,10 +109,10 @@ public class FinalizeService {
 
         // 2. privacy scope(key 오름차순) → verdict → job. 요청이 가진 key 도 같이 잠가 비교한다
         List<UUID> roomIds = queries.findRoomIds(postId);
-        // 방별 판결이면 스냅샷이 그 방 하나만 담아 보냈다(10 §4.1, 9/16). 요구하는 scope 도 그 방까지다.
-        // 게시물 전체 방을 요구하면 두 방 이상에 올린 글은 항상 EVIDENCE_INVALIDATED 로 막힌다
-        List<UUID> scopeRooms = header.roomId() == null ? roomIds : List.of(header.roomId());
-        Set<String> requiredKeys = scopeKeys(postId, header.authorId(), scopeRooms);
+        // 9/20: 공유된 방 전부를 요구한다. 스냅샷도 방 전부를 싣는다(#39) — 방별 판결이라도 그렇다.
+        // 한때 여기를 판결의 방 하나로 좁혔는데(#38), 아래 "요구 집합 밖의 room key 는 거부" 규칙과
+        // 맞물려 방 2개 이상에 올린 글이 다시 전부 막혔다. 좁히는 쪽은 room_snapshots·audience 가 맡는다
+        Set<String> requiredKeys = scopeKeys(postId, header.authorId(), roomIds);
         Set<String> lockKeys = new TreeSet<>(requiredKeys);
         request.privacyVersions().forEach(pv -> lockKeys.add(pv.scopeKey()));
         Map<String, Long> epochs = privacyEpochs.lockAndRead(lockKeys);
