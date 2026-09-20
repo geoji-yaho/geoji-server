@@ -81,7 +81,7 @@ class InvalidationServiceTest extends PostgresContainerSupport {
     }
 
     @Test
-    @DisplayName("10 §8 D-26 삭제 → 그 post 의 QUEUED·RUNNING PREPARE·SENTENCE·TEXT_RETRY CANCELLED, 세 컬럼 NULL")
+    @DisplayName("10 §8 D-26 삭제 → 그 post 의 QUEUED·RUNNING PREPARE·SENTENCE·JURY_VOTE·TEXT_RETRY CANCELLED, 세 컬럼 NULL(19 §0 ⑦)")
     void deleteCancelsActiveJobs() {
         UUID author = f.profile();
         UUID post = f.post(author);
@@ -91,6 +91,9 @@ class InvalidationServiceTest extends PostgresContainerSupport {
                 f.job("PREPARE", "RUNNING", Fixtures.postPayload(post)),
                 f.job("SENTENCE", "QUEUED", Fixtures.postPayload(post)),
                 f.job("SENTENCE", "RUNNING", Fixtures.postPayload(post)),
+                // 19 §0 ⑦: JURY_VOTE 도 payload->>'post_id' 로 찾는다
+                f.job("JURY_VOTE", "QUEUED", Fixtures.postPayload(post)),
+                f.job("JURY_VOTE", "RUNNING", Fixtures.postPayload(post)),
                 // 10 §0.1 D-26: TEXT_RETRY payload 에는 post_id 가 없고 verdict_id 로 찾힌다
                 f.job("TEXT_RETRY", "QUEUED", Fixtures.verdictPayload(verdict)),
                 f.job("TEXT_RETRY", "RUNNING", Fixtures.verdictPayload(verdict)));

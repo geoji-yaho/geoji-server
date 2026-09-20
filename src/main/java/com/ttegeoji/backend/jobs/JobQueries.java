@@ -74,7 +74,7 @@ public class JobQueries {
     }
 
     /**
-     * 10 §8 D-26: 무효화 트랜잭션에서 그 post 의 진행 중 PREPARE·SENTENCE·TEXT_RETRY 를 끈다.
+     * 10 §8 D-26: 무효화 트랜잭션에서 그 post 의 진행 중 PREPARE·SENTENCE·JURY_VOTE·TEXT_RETRY 를 끈다(JURY_VOTE 는 19 §0 ⑦).
      * TEXT_RETRY payload 에는 post_id 가 없어 호출자가 넘긴 verdictIds(그 post 의 verdict)로 찾는다. RETAIN 은 건드리지 않는다.
      * 호출자는 privacy epoch 를 먼저 올린 뒤 부른다.
      *
@@ -88,7 +88,7 @@ public class JobQueries {
                        SET status = 'CANCELLED', owner_id = NULL, generation_id = NULL, lease_until = NULL,
                            updated_at = now()
                      WHERE status IN ('QUEUED', 'RUNNING')
-                       AND ((kind IN ('PREPARE', 'SENTENCE') AND payload->>'post_id' = ?)
+                       AND ((kind IN ('PREPARE', 'SENTENCE', 'JURY_VOTE') AND payload->>'post_id' = ?)
                             OR (kind = 'TEXT_RETRY' AND payload->>'verdict_id' = ANY (?)))
                     RETURNING id
                     """);

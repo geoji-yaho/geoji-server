@@ -171,6 +171,25 @@ final class InternalFixtures {
         return "{\"post_id\": \"" + postId + "\", \"post_version\": 1, \"audience_version\": 1}";
     }
 
+    /** 19 §3 JURY_VOTE payload. voter 는 떼거지봇 id */
+    static String juryVotePayload(UUID postId, UUID roomId, UUID voterId) {
+        return "{\"post_id\": \"" + postId + "\", \"post_version\": 1, \"room_id\": \"" + roomId
+                + "\", \"voter_id\": \"" + voterId + "\"}";
+    }
+
+    /** application-test.yml 의 geoji.ai-juror-user-id 와 같은 값. profiles 행을 한 번만 넣고 그 id 를 돌려준다(19 §2) */
+    static final UUID AI_JUROR = UUID.fromString("00000000-0000-4000-8000-0000000a1b0c");
+
+    UUID aiJuror() {
+        jdbc.update("INSERT INTO profiles (id, nickname, monthly_budget) VALUES (?, '떼거지봇', 300000) ON CONFLICT (id) DO NOTHING",
+                AI_JUROR);
+        return AI_JUROR;
+    }
+
+    void member(UUID roomId, UUID userId) {
+        jdbc.update("INSERT INTO room_members (room_id, user_id) VALUES (?, ?) ON CONFLICT DO NOTHING", roomId, userId);
+    }
+
     static String sentencePayload(UUID verdictId, UUID postId) {
         return "{\"verdict_id\": \"" + verdictId + "\", \"verdict_version\": 1, \"post_id\": \"" + postId + "\"}";
     }

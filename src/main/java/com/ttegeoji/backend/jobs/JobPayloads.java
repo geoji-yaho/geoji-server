@@ -49,6 +49,16 @@ public final class JobPayloads {
         return payload;
     }
 
+    /** 19 §3 네 키 모두 필수. voter_id 는 떼거지봇 id — 워커는 이 값을 jury-votes 요청에 그대로 되돌려 보낸다. */
+    public static Map<String, Object> juryVote(String postId, long postVersion, String roomId, String voterId) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("post_id", postId);
+        payload.put("post_version", postVersion);
+        payload.put("room_id", roomId);
+        payload.put("voter_id", voterId);
+        return payload;
+    }
+
     /**
      * intensities 가 null 이면 키를 넣지 않는다(워커가 target_intensities 전체를 다시 쓴다).
      * 빈 목록은 워커가 거부하므로 여기서 막는다.

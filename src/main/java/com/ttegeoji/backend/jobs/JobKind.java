@@ -1,7 +1,7 @@
 package com.ttegeoji.backend.jobs;
 
 /**
- * ai.jobs kind 4종과 INSERT 규약(10 §3 표). AI 저장소 workers/dispatch.py JOB_ROUTES 와 같은 값이다.
+ * ai.jobs kind 5종과 INSERT 규약(10 §3 표, JURY_VOTE 는 19 §3). AI 저장소 workers/dispatch.py JOB_ROUTES 와 같은 값이다.
  * RETAIN 은 event_type 이 둘(sentence.finalized·comment.approved)이라 event_type 은 kind 가 아니라 호출 지점이 고른다.
  */
 public enum JobKind {
@@ -20,13 +20,16 @@ public enum JobKind {
     // 대기 0 이어도 20초 안에 끝날 수 없다. 실제로 writer 가 4ms 만에 통과하고(예산 0)
     // join 이 DEADLINE_EXCEEDED 로 떨어져 재시도가 한 번도 성공한 적이 없다.
     // SENTENCE 와 같은 그래프이므로 같은 90 을 준다. 상한이지 대기 시간이 아니다
-    TEXT_RETRY(50, 1, 90);
+    TEXT_RETRY(50, 1, 90),
+    // 19 §3 데모 AI 배심원 표. 폴백(템플릿 표)은 워커 안에서 하므로 deadline_at 은 NULL(watchdog 대상 아님)
+    JURY_VOTE(60, 2, null);
 
     public static final String EVENT_POST_CREATED = "post.created";
     public static final String EVENT_VERDICT_CONFIRMED = "verdict.confirmed";
     public static final String EVENT_SENTENCE_FINALIZED = "sentence.finalized";
     public static final String EVENT_VERDICT_TEXT_RETRY = "verdict.text_retry";
     public static final String EVENT_COMMENT_APPROVED = "comment.approved";
+    public static final String EVENT_JURY_VOTE_REQUESTED = "jury.vote_requested";
 
     private final int priority;
     private final int maxAttempts;

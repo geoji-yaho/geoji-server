@@ -1,5 +1,10 @@
 # 테스트 프로필. datasource 는 PostgresContainerSupport(Testcontainers)가 넣는다. 공유 Supabase 에 붙지 않는다.
 spring:
+  datasource:
+    hikari:
+      # 컨텍스트마다 풀이 하나씩 남는다(테스트 JVM 하나에 @SpringBootTest 구성 조합 수만큼). 기본 10개면
+      # 컨테이너 Postgres max_connections(100)를 넘어 "too many clients already" 로 컨텍스트가 뜨지 않는다
+      maximum-pool-size: 5
   jpa:
     hibernate:
       ddl-auto: validate
@@ -17,3 +22,5 @@ geoji:
     # 실제 AI API 를 부르지 않는다. 호출 테스트는 MockRestServiceServer 로 바꾼다
     base-url: http://localhost:0
   guardrail-policy-version: guardrail-v2
+  # 테스트용 떼거지봇 id(19 §2). 미설정 케이스는 @TestPropertySource 로 비운다
+  ai-juror-user-id: 00000000-0000-4000-8000-0000000a1b0c

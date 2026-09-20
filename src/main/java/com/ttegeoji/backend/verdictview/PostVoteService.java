@@ -24,7 +24,8 @@ public class PostVoteService {
 
     static final int REASON_MAX = 500;
 
-    private static final Map<String, Set<String>> VERDICTS_BY_POST_TYPE = Map.of(
+    // JuryVoteService(19 §5 6단계)도 같은 표로 검사한다
+    static final Map<String, Set<String>> VERDICTS_BY_POST_TYPE = Map.of(
             "spent", Set.of("guilty", "notGuilty"),
             "considering", Set.of("agree", "disagree"));
 

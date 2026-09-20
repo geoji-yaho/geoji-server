@@ -87,6 +87,58 @@ class PostCreatorTest extends PostgresContainerSupport {
         assertThat((String) sub.get("ir")).contains("\"intake_source\": \"FALLBACK\"");
     }
 
+    // application-test.yml geoji.ai-juror-user-id
+    private static final UUID AI_JUROR = UUID.fromString("00000000-0000-4000-8000-0000000a1b0c");
+
+    private void botJoins(UUID room) {
+        jdbc.update("INSERT INTO profiles (id, nickname, monthly_budget) VALUES (?, '떼거지봇', 300000) ON CONFLICT (id) DO NOTHING",
+                AI_JUROR);
+        jdbc.update("INSERT INTO room_members (room_id, user_id) VALUES (?, ?) ON CONFLICT DO NOTHING", room, AI_JUROR);
+    }
+
+    @Test
+    @DisplayName("19 §3·§9 봇이 멤버인 방 A·아닌 방 B 에 공유 → JURY_VOTE 1개(A 만, 같은 트랜잭션)·PREPARE 1개, payload 4키")
+    void juryVoteOnlyForBotRooms() {
+        UUID author = fixtures.profile(jdbc);
+        UUID roomA = fixtures.room(jdbc, author, 30);
+        UUID roomB = fixtures.room(jdbc, author, 30);
+        botJoins(roomA);
+        UUID submission = fixtures.submission(jdbc, author);
+
+        UUID postId = postCreator.create(submission, payload(PostType.spent, List.of(roomA, roomB)),
+                IntakeResult.fallback(Mode.INITIAL), IntakeStatus.PASS);
+
+        List<Map<String, Object>> jobs = jdbc.queryForList(
+                "SELECT kind, event_type, dedupe_key, aggregate_version, payload::text AS payload FROM ai.jobs WHERE aggregate_id = ? ORDER BY kind",
+                postId.toString());
+        assertThat(jobs).extracting(j -> j.get("kind")).containsExactly("JURY_VOTE", "PREPARE");
+        Map<String, Object> jury = jobs.getFirst();
+        assertThat(jury.get("event_type")).isEqualTo("jury.vote_requested");
+        assertThat(jury.get("dedupe_key")).isEqualTo("jury-vote:" + postId + ":" + roomA + ":" + AI_JUROR);
+        assertThat(jury.get("aggregate_version")).isEqualTo(1L);
+        assertThat((String) jury.get("payload"))
+                .contains("\"post_id\": \"" + postId + "\"").contains("\"post_version\": 1")
+                .contains("\"room_id\": \"" + roomA + "\"").contains("\"voter_id\": \"" + AI_JUROR + "\"")
+                .doesNotContain(roomB.toString());
+    }
+
+    @Test
+    @DisplayName("19 §1·§9 봇이 자기 템플릿 글 등록 → JURY_VOTE 0개(작성자 == 봇), PREPARE 1개")
+    void noJuryVoteForBotOwnPost() {
+        UUID owner = fixtures.profile(jdbc);
+        UUID room = fixtures.room(jdbc, owner, 30);
+        botJoins(room);
+        UUID submission = fixtures.submission(jdbc, AI_JUROR);
+
+        UUID postId = postCreator.create(submission, payload(PostType.considering, List.of(room)),
+                IntakeResult.fallback(Mode.INITIAL), IntakeStatus.PASS);
+
+        assertThat(count("SELECT count(*) FROM ai.jobs WHERE kind = 'JURY_VOTE' AND aggregate_id = ?", postId.toString()))
+                .isZero();
+        assertThat(count("SELECT count(*) FROM ai.jobs WHERE kind = 'PREPARE' AND aggregate_id = ?", postId.toString()))
+                .isEqualTo(1);
+    }
+
     @Test
     @DisplayName("10 §9 vote_deadline_at = 생성 시각 + 공유 방 중 가장 짧은 vote_deadline_minutes")
     void voteDeadlineUsesShortestRoom() {

@@ -7,7 +7,8 @@ CREATE TABLE ai.jobs (
     id uuid PRIMARY KEY,
     event_id uuid NOT NULL UNIQUE,
     event_type text NOT NULL,
-    kind text NOT NULL CHECK (kind IN ('PREPARE','SENTENCE','TEXT_RETRY','RETAIN')),
+    -- 'JURY_VOTE' 는 AI 마이그레이션 006 이 넓힌 값(19 §8). 운영은 006, 여기는 복사본에 직접 반영(19 §0 ⑥)
+    kind text NOT NULL CHECK (kind IN ('PREPARE','SENTENCE','TEXT_RETRY','RETAIN','JURY_VOTE')),
     dedupe_key text NOT NULL UNIQUE,
     aggregate_id text NOT NULL,
     aggregate_version bigint NOT NULL CHECK (aggregate_version > 0),

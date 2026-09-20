@@ -62,6 +62,29 @@ class JobEnqueuerTest extends PostgresContainerSupport {
     }
 
     @Test
+    @DisplayName("19 §3 JURY_VOTE jury.vote_requested — dedupe post·room·voter·priority 60·max_attempts 2·deadline null·payload 4키")
+    void juryVoteRow() {
+        String postId = id();
+        String roomId = id();
+        String voterId = id();
+        JobRow row = row(enqueuer.enqueueJuryVote(postId, 2, roomId, voterId));
+
+        assertThat(row.kind()).isEqualTo(JobKind.JURY_VOTE);
+        assertThat(row.eventType()).isEqualTo("jury.vote_requested");
+        assertThat(row.dedupeKey()).isEqualTo("jury-vote:" + postId + ":" + roomId + ":" + voterId);
+        assertThat(row.priority()).isEqualTo(60);
+        assertThat(row.maxAttempts()).isEqualTo(2);
+        assertThat(row.deadlineAt()).isNull();
+        assertThat(row.aggregateId()).isEqualTo(postId);
+        assertThat(row.aggregateVersion()).isEqualTo(2);
+        assertThat(payload(row)).containsExactlyInAnyOrderEntriesOf(
+                Map.of("post_id", postId, "post_version", 2, "room_id", roomId, "voter_id", voterId));
+        // 같은 글·방·봇은 1개
+        assertThat(enqueuer.enqueueJuryVote(postId, 2, roomId, voterId).created()).isFalse();
+        assertThat(countByDedupe("jury-vote:" + postId + ":" + roomId + ":" + voterId)).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("10 §3 PREPARE post.created — dedupe·priority 30·max_attempts 2·deadline null·payload")
     void prepareRow() {
         String postId = id();
