@@ -40,7 +40,7 @@ Authorization: Bearer <supabase access_token>
 ```json
 {
   "id": "045e09df-8b88-4a12-96f1-3848c7232c87",
-  "nickname": "김규민",
+  "nickname": "user1",
   "avatarUrl": null,
   "monthlyBudget": 500000
 }
@@ -59,7 +59,7 @@ Supabase Auth 가입만으로는 `profiles`에 행이 생기지 않는다. **로
 
 **Request**
 ```json
-{ "nickname": "김규민", "monthlyBudget": 500000 }
+{ "nickname": "user1", "monthlyBudget": 500000 }
 ```
 `nickname`은 생략 가능 — **카카오 등 소셜 로그인이면 Supabase가 JWT에 넣어준 프로필
 닉네임(`user_metadata.name`/`nickname`/`full_name` 중 먼저 있는 값)으로 자동 채워진다.**
@@ -599,7 +599,7 @@ MVP 설계서 13장 "시상식 즉시 생성 버튼"용 데모 엔드포인트. 
 [
   {
     "userId": "045e09df-8b88-4a12-96f1-3848c7232c87",
-    "nickname": "김규민",
+    "nickname": "user1",
     "avatarUrl": null,
     "debtScore": 71,
     "joinedAt": "2026-09-01T00:00:00+09:00"
@@ -864,7 +864,7 @@ AI 판사가 형량·판결문을 만든다(최대 약 40초, 늦으면 템플�
   "item": "심야 택시",
   "reason": "막차 놓쳐서",
   "authorId": "1a2b…",
-  "authorNickname": "규민",
+  "authorNickname": "user1",
   "voteDeadlineAt": "2026-09-15T12:33:00Z",
   "createdAt": "2026-09-15T12:03:00Z",
   "rooms": [{ "id": "6a1f…", "name": "야근족 거지방", "spiceLevel": "spicy" }],
@@ -914,7 +914,7 @@ AI 판사가 형량·판결문을 만든다(최대 약 40초, 늦으면 템플�
     "category": "교통/택시",
     "item": "심야 택시",
     "authorId": "1a2b…",
-    "authorNickname": "규민",
+    "authorNickname": "user1",
     "voteDeadlineAt": "2026-09-15T12:33:00Z",
     "createdAt": "2026-09-15T12:03:00Z",
     "juryStatus": null,
