@@ -1,8 +1,8 @@
 name: Deploy to Elastic Beanstalk
 
+# Elastic Beanstalk 환경을 내린 뒤로는 수동 실행만 한다 (Actions 탭 > Run workflow)
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   deploy:
